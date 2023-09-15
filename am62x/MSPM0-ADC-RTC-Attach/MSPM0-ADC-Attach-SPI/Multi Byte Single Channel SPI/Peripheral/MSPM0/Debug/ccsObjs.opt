@@ -1,0 +1,6 @@
+"./spi_peripheral_repeated_multibyte_fifo_dma_interrupts.o"
+"./syscfg/ti_msp_dl_config.o"
+"./ticlang/startup_mspm0l1306_ticlang.o"
+"../mspm0l1306.cmd"
+-l"C:/ti/mspm0_sdk_1_00_01_03/source/ti/driverlib/lib/ticlang/m0p/mspm0l11xx_l13xx/driverlib.a"
+-llibc.a

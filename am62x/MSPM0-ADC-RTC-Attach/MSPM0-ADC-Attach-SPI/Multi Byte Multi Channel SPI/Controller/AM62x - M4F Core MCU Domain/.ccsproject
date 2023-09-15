@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<?ccsproject version="1.0"?>
+<projectOptions>
+	<ccsVersion value="12.3.0"/>
+	<deviceVariant value="Cortex M.AM62x"/>
+	<deviceFamily value="TMS470"/>
+	<deviceEndianness value="little"/>
+	<codegenToolVersion value="TICLANG_2.1.2.LTS"/>
+	<isElfFormat value="true"/>
+	<connection value="common/targetdb/connections/TIXDS110_Connection.xml"/>
+	<rts value=""/>
+	<createSlaveProjects value=""/>
+	<ignoreDefaultDeviceSettings value="true"/>
+	<ignoreDefaultCCSSettings value="true"/>
+	<templateProperties value="id=example.projectspec.mcspi_loopback_am62x-sk-lp_m4fss0-0_freertos_ti-arm-clang"/>
+	<origin value="C:\ti\mcu_plus_sdk_am62x_08_06_00_18\examples\drivers\mcspi\mcspi_loopback\am62x-sk-lp\m4fss0-0_freertos\ti-arm-clang\example.projectspec"/>
+	<filesToOpen value=""/>
+</projectOptions>

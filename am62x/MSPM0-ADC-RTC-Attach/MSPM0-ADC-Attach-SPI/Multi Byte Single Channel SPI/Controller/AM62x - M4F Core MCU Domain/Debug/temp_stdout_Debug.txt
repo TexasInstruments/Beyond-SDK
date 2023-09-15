@@ -1,0 +1,21 @@
+[C:/Users/a0507040/Desktop/SPI_interface/Multi_Byte_Single_Channel/Multi_Byte_Single_Channel_MCSPI_AM62x/Debug/MCSPI_AM62x_multibyte_singlechannel.rprc_tmp] Parsing file ...
+Found section 0 with adddress 0x00000000, size 0x00000140 bytes
+Found section 1 with adddress 0x00000200, size 0x0000d520 bytes
+Found section 2 with adddress 0x00036720, size 0x00001c60 bytes
+Found section 3 with adddress 0x00038380, size 0x00000598 bytes
+[C:/Users/a0507040/Desktop/SPI_interface/Multi_Byte_Single_Channel/Multi_Byte_Single_Channel_MCSPI_AM62x/Debug/MCSPI_AM62x_multibyte_singlechannel.rprc_tmp] Found 4 sections. 4 are non-XIP sections, 0 are XIP sections, NON-XIP entryPoint = 0x0000b7e9
+Merging section @ 0x00038380 of size 0x00000598, with section @ 0x00036720 of size 0x00001c60
+Writing section header  #0, adddress 0x00000000, size 0x00000140 bytes to file [C:/Users/a0507040/Desktop/SPI_interface/Multi_Byte_Single_Channel/Multi_Byte_Single_Channel_MCSPI_AM62x/Debug/MCSPI_AM62x_multibyte_singlechannel.rprc]
+Writing section data with adddress 0x00000000, size 0x00000140 bytes to file [C:/Users/a0507040/Desktop/SPI_interface/Multi_Byte_Single_Channel/Multi_Byte_Single_Channel_MCSPI_AM62x/Debug/MCSPI_AM62x_multibyte_singlechannel.rprc]
+Writing section header  #1, adddress 0x00000200, size 0x0000d520 bytes to file [C:/Users/a0507040/Desktop/SPI_interface/Multi_Byte_Single_Channel/Multi_Byte_Single_Channel_MCSPI_AM62x/Debug/MCSPI_AM62x_multibyte_singlechannel.rprc]
+Writing section data with adddress 0x00000200, size 0x0000d520 bytes to file [C:/Users/a0507040/Desktop/SPI_interface/Multi_Byte_Single_Channel/Multi_Byte_Single_Channel_MCSPI_AM62x/Debug/MCSPI_AM62x_multibyte_singlechannel.rprc]
+Writing section header  #2, adddress 0x00036720, size 0x000021f8 bytes to file [C:/Users/a0507040/Desktop/SPI_interface/Multi_Byte_Single_Channel/Multi_Byte_Single_Channel_MCSPI_AM62x/Debug/MCSPI_AM62x_multibyte_singlechannel.rprc]
+Writing section data with adddress 0x00036720, size 0x00001c60 bytes to file [C:/Users/a0507040/Desktop/SPI_interface/Multi_Byte_Single_Channel/Multi_Byte_Single_Channel_MCSPI_AM62x/Debug/MCSPI_AM62x_multibyte_singlechannel.rprc]
+Writing section data with adddress 0x00038380, size 0x00000598 bytes to file [C:/Users/a0507040/Desktop/SPI_interface/Multi_Byte_Single_Channel/Multi_Byte_Single_Channel_MCSPI_AM62x/Debug/MCSPI_AM62x_multibyte_singlechannel.rprc]
+[C:/Users/a0507040/Desktop/SPI_interface/Multi_Byte_Single_Channel/Multi_Byte_Single_Channel_MCSPI_AM62x/Debug/MCSPI_AM62x_multibyte_singlechannel.rprc] Parsing file ...
+Found section 0 with adddress 0x00000000, size 0x00000140 bytes
+Found section 1 with adddress 0x00000200, size 0x0000d520 bytes
+Found section 2 with adddress 0x00036720, size 0x000021f8 bytes
+[C:/Users/a0507040/Desktop/SPI_interface/Multi_Byte_Single_Channel/Multi_Byte_Single_Channel_MCSPI_AM62x/Debug/MCSPI_AM62x_multibyte_singlechannel.rprc] Found 3 sections. 3 are non-XIP sections, 0 are XIP sections, NON-XIP entryPoint = 0x0000b7e9
+[C:/Users/a0507040/Desktop/SPI_interface/Multi_Byte_Single_Channel/Multi_Byte_Single_Channel_MCSPI_AM62x/Debug/MCSPI_AM62x_multibyte_singlechannel.rprc_xip] Parsing file ...
+[C:/Users/a0507040/Desktop/SPI_interface/Multi_Byte_Single_Channel/Multi_Byte_Single_Channel_MCSPI_AM62x/Debug/MCSPI_AM62x_multibyte_singlechannel.rprc_xip] Found 0 sections. 0 are non-XIP sections, 0 are XIP sections, NON-XIP entryPoint = 0x00000000

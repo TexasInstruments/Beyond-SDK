@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<configurations XML_version="1.2" id="configurations_0">
+    <configuration XML_version="1.2" id="configuration_0">
+        <instance XML_version="1.2" desc="Texas Instruments XDS110 USB Debug Probe" href="connections/TIXDS110_Connection.xml" id="Texas Instruments XDS110 USB Debug Probe" xml="TIXDS110_Connection.xml" xmlpath="connections"/>
+        <connection XML_version="1.2" id="Texas Instruments XDS110 USB Debug Probe">
+            <instance XML_version="1.2" href="drivers/tixds510cs_dap.xml" id="drivers" xml="tixds510cs_dap.xml" xmlpath="drivers"/>
+            <instance XML_version="1.2" href="drivers/tixds510cortexA53.xml" id="drivers" xml="tixds510cortexA53.xml" xmlpath="drivers"/>
+            <instance XML_version="1.2" href="drivers/tixds510cortexM.xml" id="drivers" xml="tixds510cortexM.xml" xmlpath="drivers"/>
+            <instance XML_version="1.2" href="drivers/tixds510cortexR.xml" id="drivers" xml="tixds510cortexR.xml" xmlpath="drivers"/>
+            <instance XML_version="1.2" href="drivers/tixds510pru.xml" id="drivers" xml="tixds510pru.xml" xmlpath="drivers"/>
+            <instance XML_version="1.2" href="drivers/tixds510csstm.xml" id="drivers" xml="tixds510csstm.xml" xmlpath="drivers"/>
+            <instance XML_version="1.2" href="drivers/tixds510ctset2.xml" id="drivers" xml="tixds510ctset2.xml" xmlpath="drivers"/>
+            <instance XML_version="1.2" href="drivers/tixds510etbcs.xml" id="drivers" xml="tixds510etbcs.xml" xmlpath="drivers"/>
+            <platform XML_version="1.2" id="platform_0">
+                <instance XML_version="1.2" desc="AM62" href="devices/AM62x.xml" id="AM62" xml="AM62x.xml" xmlpath="devices"/>
+                <device HW_revision="1" XML_version="1.2" description="AM62" id="AM62" partnum="AM62x">
+                    <router HW_revision="1.0" XML_version="1.2" description="CS_DAP Router" id="CS_DAP_0" isa="CS_DAP">
+                        <subpath id="SMS_CM4_0_TIFS">
+                            <cpu HW_revision="1.0" XML_version="1.2" desc="SMS_CM4_0_TIFS_0" description="Cortex_M4F CPU" id="SMS_CM4_0_TIFS" isa="Cortex_M4F"/>
+                        </subpath>
+                        <subpath id="BLAZER_CM4">
+                            <cpu HW_revision="1.0" XML_version="1.2" desc="BLAZAR_Cortex_M4F_1" description="Cortex_M4F CPU" id="BLAZER_CM4" isa="Cortex_M4F"/>
+                        </subpath>
+                    </router>
+                </device>
+            </platform>
+        </connection>
+    </configuration>
+</configurations>

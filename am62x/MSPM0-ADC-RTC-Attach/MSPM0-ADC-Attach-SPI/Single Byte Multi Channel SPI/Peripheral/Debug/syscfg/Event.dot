@@ -1,0 +1,35 @@
+
+
+digraph H {
+
+  parent [
+   shape=plaintext
+   label=<
+     <table border='1' cellborder='1'>
+       <tr>
+            <td bgcolor="green" port='chan_1'>Channel 1</td>
+            <td bgcolor="grey" port='chan_2'>Channel 2</td>
+            <td bgcolor="black" port='chan_3'><font color="grey">Channel 3</font></td>
+         </tr>
+     </table>
+  >];
+
+pub_chan_1 [
+    shape=plaintext
+    label=<
+    <table border='1'  cellborder='0'>
+      <tr><td>TIMER_ADC</td></tr>
+    </table>
+    >];
+pub_chan_1 -> parent: chan_1;
+
+sub_chan_1_0 [
+  shape=plaintext
+  label=<
+    <table border='1'  cellborder='0'>
+      <tr><td>ADC</td></tr>
+    </table>
+  >];
+parent: chan_1 -> sub_chan_1_0;
+
+}
