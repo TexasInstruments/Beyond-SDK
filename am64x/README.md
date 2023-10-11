@@ -5,6 +5,7 @@
 | read_soc_uid | [09.00.00.31] | [09.00.00.31] |
 | switch_boot_mode | [09.00.00.35] | [09.00.00.35] |
 | auto_bcdma_triggers_with_gpio_interrupt | [09.00.00.35] | [09.00.00.35] |
+| auto_bcdma_triggers_with_iep_timer | [09.00.00.35] | [09.00.00.35] |
 
 `Last Developed On` refers to the SDK version on top of which the example was developed while `Last Tested On` refers to the SDK version with which it was tested. The `Last Tested On` may differ from `Last Developed On` in case the example is tested successfully with newer SDK version without any changes in the example.
 
