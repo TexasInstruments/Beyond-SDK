@@ -35,26 +35,23 @@
 #include "ti_drivers_config.h"
 #include "ti_drivers_open_close.h"
 #include "ti_board_open_close.h"
-#include <drivers/soc/am64x_am243x/soc.h>
-#include <stdio.h>
 
 /*
- * This is an switch boot mode project provided for r5fss0-0 cores present in the device.
- * User can use this project to change boot mode without disturbing the boot pins.
+ * This is an switch_boot_mode project provided for R5F0-0 core present in the device.
+ * User can use this project to switch between various boot modes available on device.
  *
- * To run the project 
- * Set the board in NO BOOT mode.
- * Launch the target configuartion file and open scripting console.
- * In the scripting console run below command  
- *     -> loadJSFile "<SDK Install path>/tools/ccs_load/am64x/load_dmsc.js"
- * Load the .out file on the r5fss0-0 core.
+ * This application does driver and board init and implements a interface for user to select between various boot mode settings.
+ * In case of the main core, the print is redirected to the UART console.
+ * For all other cores, CCS prints are used.
  */
 
-#define UART 0xD3B  // UART BOOT MODE CONFIG
-#define OSPI 0x273  // OSPI BOOT MODE CONFIG
-#define SD   0x36C3 // SD BOOT MODE CONFIG
-#define NO 0xFB     // NO BOOT MODE CONFIG
-#define EMMC 0x4B   // EMMC BOOT MODE CONFIG
+#define UART    0xD3B
+#define OSPI    0x273
+#define SDBOOT  0x36C3
+#define EMMC    0x4B
+#define DFU     0x53
+#define DEV     0x7B
+#define PCIE    0x6B
 
 
 void switch_boot_mode_main(void *args)
@@ -67,15 +64,15 @@ void switch_boot_mode_main(void *args)
     printf("1. UART BOOT MODE\r\n");
     printf("2. OSPI BOOT MODE\r\n");
     printf("3. SD BOOT MODE\r\n");
-    printf("4. NO BOOT MODE\r\n");
-    printf("5. EMMC BOOT MODE\r\n\r\n");
+    printf("4. EMMC BOOT MODE\r\n");
+    printf("5. DFU BOOT MODE\r\n");
+    printf("6. DEV BOOT MODE\r\n");
+    printf("7. PCIE BOOT MODE\r\n\r\n");
 
     int mode;
     printf("Enter Boot Mode : ");
     scanf("%d", &mode);
     printf("\r\n");
-
-    // Setting the Board in specified boot mode
     switch(mode)
     {
         case 1:
@@ -87,25 +84,33 @@ void switch_boot_mode_main(void *args)
             printf("Switched OSPI BOOT MODE\r\n");
             break;
         case 3:
-            SOC_setDevStat(SD);
+            SOC_setDevStat(SDBOOT);
             printf("Switched SD BOOT MODE\r\n");
             break;
         case 4:
-            SOC_setDevStat(NO);
-            printf("Switched NO BOOT MODE\r\n");
-            break;
-        case 5:
             SOC_setDevStat(EMMC);
             printf("Switched EMMC BOOT MODE\r\n");
+            break;
+        case 5:
+            SOC_setDevStat(DFU);
+            printf("Switched DFU BOOT MODE\r\n");
+            break;
+        case 6:
+            SOC_setDevStat(DEV);
+            printf("Switched DEV BOOT MODE\r\n");
+            break;
+        case 7:
+            SOC_setDevStat(PCIE);
+            printf("Switched PCIE BOOT MODE\r\n");
             break;
         default:
             printf("INVALID BOOT MODE\r\n");
             break;
     }
 
-    SOC_generateSwWarmResetMainDomain(); // Performing Software warm reset of MAIN Domain
+    SOC_controlModuleUnlockMMR(SOC_DOMAIN_ID_MAIN, 0);
+    SOC_generateSwWarmResetMainDomain();
 
-    /* Close drivers to close the UART driver for console */
     Board_driversClose();
     Drivers_close();
 }
