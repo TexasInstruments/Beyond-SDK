@@ -11,13 +11,13 @@
 - There is a 10K pull-down on OSPI_SW_SEL to default to OSPI FLASH
 
 #### PSRAM datasheet:
-- [APM_PSRAM_OPI_Xccela_APS6408L_3OBMx_v3_5b_PKG-1954852.pdf](https://www.apmemory.com/wp-content/uploads/APS6408L-3OBM-BA.pdf)
+- [APM_PSRAM_OPI_Xccela_APS6408L_3OBMx_v3_5b_PKG-1954852.pdf](https://www.mouser.com/datasheet/2/1127/APM_PSRAM_OPI_Xccela_APS6408L_OBMx_v3_5b_PKG-1954880.pdf)
 
 
 ### SOFTWARE:
 
 #### MCU+SDK changes
-  - Apply patch mcu_sdk_10_0_0_20_ospi_psram.patch, which does the following:
+  - Apply patch mcu_sdk_10_0_0_20_ospi_psram.patch from mcu sdk root folder, which does the following:
     - Added PSRAM to board lib
     - OSPI driver changes 
 - Libs rebuild example:
