@@ -1,0 +1,353 @@
+diff --git a/source/board/makefile.am243x.r5f.ti-arm-clang b/source/board/makefile.am243x.r5f.ti-arm-clang
+index 0b7c61f7..806a1709 100644
+--- a/source/board/makefile.am243x.r5f.ti-arm-clang
++++ b/source/board/makefile.am243x.r5f.ti-arm-clang
+@@ -26,6 +26,7 @@ FILES_common := \
+     flash_nor_ospi.c \
+     ram.c \
+     psram_gpmc.c \
++    psram.c \
+     led.c \
+     led_gpio.c \
+     led_tpic2810.c \
+diff --git a/source/board/psram.h b/source/board/psram.h
+new file mode 100644
+index 00000000..cf171e2a
+--- /dev/null
++++ b/source/board/psram.h
+@@ -0,0 +1,163 @@
++/*
++ *  Copyright (C) 2021-2023 Texas Instruments Incorporated
++ *
++ *  Redistribution and use in source and binary forms, with or without
++ *  modification, are permitted provided that the following conditions
++ *  are met:
++ *
++ *    Redistributions of source code must retain the above copyright
++ *    notice, this list of conditions and the following disclaimer.
++ *
++ *    Redistributions in binary form must reproduce the above copyright
++ *    notice, this list of conditions and the following disclaimer in the
++ *    documentation and/or other materials provided with the
++ *    distribution.
++ *
++ *    Neither the name of Texas Instruments Incorporated nor the names of
++ *    its contributors may be used to endorse or promote products derived
++ *    from this software without specific prior written permission.
++ *
++ *  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
++ *  "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
++ *  LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
++ *  A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
++ *  OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++ *  SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
++ *  LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
++ *  DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
++ *  THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++ *  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++ *  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++ */
++
++#ifndef PSRAM_H_
++#define PSRAM_H_
++
++#ifdef __cplusplus
++extern "C"
++{
++#endif
++
++#include <stdint.h>
++#include <kernel/dpl/SystemP.h>
++#include <drivers/hw_include/soc_config.h>
++
++/**
++ *  \defgroup BOARD_PSRAM_MODULE APIs for PSRAM
++ *  \ingroup BOARD_MODULE
++ *
++ *  This module contains APIs to program and use the Psram module on the board like XSPI NOR Psram.
++ *  See \ref BOARD_PSRAM_PAGE for more details.
++ *
++ *  @{
++ */
++/**
++ * \brief Handle to the PSRAM driver returned by Psram_opem()
++ */
++typedef void  *Psram_Handle;
++
++/**
++ * \brief Forward declaration of \ref Psram_Config
++ */
++typedef struct Psram_Config_s Psram_Config;
++
++/**
++ * \brief Forward declaration of \ref Psram_Params
++ */
++typedef struct Psram_Params_s Psram_Params;
++
++typedef struct Psram_Attrs_s {
++
++    uint32_t psramType;      /**< Psram type. Whether it's NAND or NOR */
++    char *psramName;         /**< Psram name. Taken from Sysconfig */
++    uint32_t deviceId;       /**< Psram device ID as read form the Psram device, this will be filled when Psram_open() is called */
++    uint32_t manufacturerId; /**< Psram manufacturer ID as read form the Psram device, this will be filled when Psram_open() is called */
++    uint32_t driverInstance; /**< Underlying SPI peripheral driver instance that is used by the Psram driver, e.g OSPI driver */
++    uint32_t psramSize;      /**< Psram size, in bytes */
++
++} Psram_Attrs;
++
++typedef int32_t (*Psram_OpenFxn)(Psram_Config *config);
++
++typedef void (*Psram_CloseFxn)(Psram_Config *config);
++typedef int32_t (*Psram_ReadFxn)(Psram_Config *config, uint32_t offset,
++                                   uint8_t *buf, uint32_t len) ;
++typedef int32_t (*Psram_WriteFxn)(Psram_Config *config, uint32_t offset,
++                                   uint8_t *buf, uint32_t len) ;
++
++/**
++ * \brief Driver implementation callbacks
++ */
++typedef struct Psram_Fxns_s
++{
++    Psram_OpenFxn  openFxn;  /**< Flash driver implementation specific callback */
++    Psram_CloseFxn closeFxn; /**< Flash driver implementation specific callback */
++    Psram_ReadFxn  readFxn;  /**< Flash driver implementation specific callback */
++    Psram_WriteFxn writeFxn; /**< Flash driver implementation specific callback */
++} Psram_Fxns;
++
++/**
++ * \brief Psram driver configuration, these are filled by SysCfg based on the psram device that is selected.
++ */
++typedef struct Psram_Config_s
++{
++    Psram_Attrs                *attrs;       /**< Psram device attributes */
++    Psram_Fxns                 *fxns;        /**< Psram device implementation functions */
++    void                       *object;      /**< Psram driver object, used to maintain driver implementation state */
++
++} Psram_Config;
++
++/**
++ * \brief Psram device config. This will be part of the psram config, so has to
++ *        be filled by sysconfig or otherwise before invoking Psram_open
++ */
++
++/**
++ *
++ * \brief User implementation of a custom function to handle vendor specific quirks
++ *
++ * Typically this callback is hidden from the end application and is implemented
++ * when a new type of flash device needs to be implemented.
++ *
++ * \param config [in] Flash configuration for the specific flash device
++ *
++ * \return SystemP_SUCCESS on success, else failure
++ */
++typedef int32_t (*Psram_quirksFxn)(Psram_Config *config);
++
++/**
++ * \brief User implementation of a custom function to configure flash to operate in a specific protocol
++ *
++ * \param config [in] Flash configuration for the specific flash device
++ *
++ * \return SystemP_SUCCESS on success, else failure
++ */
++typedef int32_t (*Psram_custProtocolFxn)(Psram_Config *config);
++
++/** @} */
++
++
++/**
++ * \brief Parameters passed during Flash_open()
++ */
++typedef struct Psram_Params_s {
++
++    Psram_quirksFxn quirksFxn;
++    Psram_custProtocolFxn custProtoFxn;
++
++} Psram_Params;
++
++Psram_Attrs *Psram_getAttrs(uint32_t instanceId);
++Psram_Handle Psram_open(uint32_t instanceId, Psram_Params *params);
++void Psram_close(Psram_Handle handle);
++int32_t Psram_write(Psram_Handle handle, uint32_t offset, uint8_t *buf, uint32_t len);
++int32_t Psram_read(Psram_Handle handle, uint32_t offset, uint8_t *buf, uint32_t len);
++
++/** @} */
++
++
++#ifdef __cplusplus
++}
++#endif
++
++#endif /* PSRAM_H_ */
+\ No newline at end of file
+diff --git a/source/board/ram/psram.c b/source/board/ram/psram.c
+new file mode 100644
+index 00000000..463bd3bb
+--- /dev/null
++++ b/source/board/ram/psram.c
+@@ -0,0 +1,105 @@
++/*
++ *  Copyright (C) 2021-2023 Texas Instruments Incorporated
++ *
++ *  Redistribution and use in source and binary forms, with or without
++ *  modification, are permitted provided that the following conditions
++ *  are met:
++ *
++ *    Redistributions of source code must retain the above copyright
++ *    notice, this list of conditions and the following disclaimer.
++ *
++ *    Redistributions in binary form must reproduce the above copyright
++ *    notice, this list of conditions and the following disclaimer in the
++ *    documentation and/or other materials provided with the
++ *    distribution.
++ *
++ *    Neither the name of Texas Instruments Incorporated nor the names of
++ *    its contributors may be used to endorse or promote products derived
++ *    from this software without specific prior written permission.
++ *
++ *  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
++ *  "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
++ *  LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
++ *  A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
++ *  OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++ *  SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
++ *  LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
++ *  DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
++ *  THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++ *  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++ *  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++ */
++
++#include <board/psram.h>
++#include <stddef.h> //PC-- added to fix undeclared NULL error
++
++extern Psram_Config gPsramConfig[];
++extern uint32_t gPsramConfigNum;
++
++Psram_Attrs *Psram_getAttrs(uint32_t instanceId)
++{
++    Psram_Attrs *attrs = NULL;
++    Psram_Config *config = NULL;
++
++    if(instanceId < gPsramConfigNum)
++    {
++        config = &gPsramConfig[instanceId];
++        attrs = config->attrs;
++    }
++    return attrs;
++}
++
++Psram_Handle Psram_open(uint32_t instanceId, Psram_Params *params)
++{
++    Psram_Config *config = NULL;
++
++    if(instanceId < gPsramConfigNum)
++    {
++        config = &gPsramConfig[instanceId];
++        if(config->fxns && config->fxns->openFxn)
++        {
++            int32_t status;
++
++            status = config->fxns->openFxn(config);
++            if(status != SystemP_SUCCESS)
++            {
++                config = NULL;
++            }
++        }
++    }
++    return config;
++}
++
++int32_t Psram_write(Psram_Handle handle, uint32_t offset, uint8_t *buf, uint32_t len)
++{
++    Psram_Config *config = (Psram_Config*)handle;
++    int32_t status = SystemP_FAILURE;
++
++    if(config && config->fxns && config->fxns->writeFxn)
++    {
++        status = config->fxns->writeFxn(config, offset, buf, len);
++    }
++    return status;
++}
++
++int32_t Psram_read(Psram_Handle handle, uint32_t offset, uint8_t *buf, uint32_t len)
++{
++    Psram_Config *config = (Psram_Config*)handle;
++    int32_t status = SystemP_FAILURE;
++
++    if(config && config->fxns && config->fxns->readFxn)
++    {
++        status = config->fxns->readFxn(config, offset, buf, len);
++    }
++    return status;
++}
++
++void Psram_close(Psram_Handle handle)
++{
++    Psram_Config *config = (Psram_Config*)handle;
++
++    if(config && config->fxns && config->fxns->closeFxn)
++    {
++        config->fxns->closeFxn(config);
++    }
++}
+\ No newline at end of file
+diff --git a/source/drivers/ospi/v0/ospi_v0.c b/source/drivers/ospi/v0/ospi_v0.c
+index 69703043..a25629be 100644
+--- a/source/drivers/ospi/v0/ospi_v0.c
++++ b/source/drivers/ospi/v0/ospi_v0.c
+@@ -91,8 +91,8 @@
+ /** \brief  SRAM partition configuration definitions */
+ /** size of the indirect read/write partition in the SRAM,
+     in units of SRAM locations */
+-#define CSL_OSPI_SRAM_SIZE_WORDS        (128U)
+-#define CSL_OSPI_SRAM_PARTITION_RD      (64U)
++#define CSL_OSPI_SRAM_SIZE_WORDS        (256U) //PC-- orig val 128U
++#define CSL_OSPI_SRAM_PARTITION_RD      (CSL_OSPI_SRAM_SIZE_WORDS/2) //PC-- orig val 64U
+ #define CSL_OSPI_SRAM_PARTITION_WR      (CSL_OSPI_SRAM_SIZE_WORDS - \
+                                          CSL_OSPI_SRAM_PARTITION_RD)
+ /* Default value for SRAM PARTITION register */
+@@ -1412,21 +1412,35 @@ int32_t OSPI_writeDirect(OSPI_Handle handle, OSPI_Transaction *trans)
+     // OSPI_Object *obj = ((OSPI_Config *)handle)->object;
+     const CSL_ospi_flash_cfgRegs *pReg = (const CSL_ospi_flash_cfgRegs *)(attrs->baseAddr);
+ 
+-    uint8_t *pSrc;
+-    uint8_t *pDst;
++    uint32_t *pSrc;
++    uint32_t *pDst;
+     uint32_t addrOffset;
+-
++    uint32_t temp = 0;
+     addrOffset = trans->addrOffset;
+-    pSrc = (uint8_t *) trans->buf;
++    pSrc = (uint32_t *) trans->buf;
+ 
+     /* Enable Direct Access Mode */
+     CSL_REG32_FINS(&pReg->CONFIG_REG, OSPI_FLASH_CFG_CONFIG_REG_ENB_DIR_ACC_CTLR_FLD, 1);
+     CSL_REG32_WR(&pReg->IND_AHB_ADDR_TRIGGER_REG, 0x04000000);
+ 
+-    pDst = (uint8_t *)(attrs->dataBaseAddr + addrOffset);
+-
+-
+-    memcpy(pDst, pSrc, trans->count);
++    pDst = (uint32_t *)(attrs->dataBaseAddr + addrOffset);
++    uint32_t remaining = trans->count;
++    while (remaining > 0)
++    {
++        if (remaining >= CSL_OSPI_FIFO_WIDTH)
++        {
++            CSL_REG32_WR(pDst, *pSrc);
++            remaining -= CSL_OSPI_FIFO_WIDTH;
++        }
++        else
++        {
++            /* dangling bytes */
++            memcpy(&temp, pSrc, remaining);
++            CSL_REG32_WR(pDst, temp);
++            break;
++        }
++        pSrc++;pDst++;
++    }
+ 
+     return status;
+     return SystemP_SUCCESS;
