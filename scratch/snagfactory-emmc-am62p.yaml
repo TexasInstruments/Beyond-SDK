@@ -1,0 +1,44 @@
+boards:
+  "0451:6165": "am62p"
+
+soc-models:
+  am62p-firmware:
+      tiboot3:
+        path: "/home/a0507040local/sdks/am62p/sdk11_0/board-support/built-images/tiboot3.bin"
+      tispl:
+        path: "/home/a0507040local/sdks/am62p/sdk11_0/board-support/built-images/tispl.bin"
+      u-boot:
+        path: "/home/a0507040local/sdks/am62p/sdk11_0/board-support/built-images/u-boot.img" 
+
+  am62p-tasks:
+    - target-device: mmc0
+      fb-buffer-addr: 0x82000000
+      fb-buffer-size: 0x7000000
+
+    - task: gpt
+      args:
+        - name: rootfs
+          size: 1G
+
+    - task: reset
+
+    - task: flash
+      args:
+        - image: "/home/a0507040local/sdks/am62p/sdk11_0/mcu_plus_sdk_am62px_11_00_00_16/tools/boot/sbl_prebuilt/am62px-sk/sbl_emmc_linux_stage1.release.hs_fs.tiimage"
+          image-offset: 0x0
+          part: "hwpart 1"
+        - image: "/home/a0507040local/sdks/am62p/sdk11_0/mcu_plus_sdk_am62px_11_00_00_16/tools/boot/../../examples/drivers/boot/sbl_emmc_linux_multistage/sbl_emmc_linux_stage2/am62px-sk/wkup-r5fss0-0_freertos/ti-arm-clang/sbl_emmc_linux_stage2.release.appimage.hs_fs"
+          image-offset: 0x80000
+          part: "hwpart 1"
+        - image: "/home/a0507040local/sdks/am62p/sdk11_0/mcu_plus_sdk_am62px_11_00_00_16/tools/boot/HSMAppimageGen/board/am62px-sk/hsm.appimage.hs_fs"
+          image-offset: 0x240000
+          part: "hwpart 1"
+        - image: "/home/a0507040local/sdks/am62p/sdk11_0/mcu_plus_sdk_am62px_11_00_00_16/tools/boot/../../examples/drivers/ipc/ipc_rpmsg_echo_linux/am62px-sk/mcu-r5fss0-0_freertos/ti-arm-clang/ipc_rpmsg_echo_linux.release.appimage.hs_fs"
+          image-offset: 0x800000
+          part: "hwpart 1"
+        - image: "/home/a0507040local/sdks/am62p/sdk11_0/mcu_plus_sdk_am62px_11_00_00_16/tools/boot/linuxAppimageGen/board/am62px-sk/linux.appimage.hs_fs"
+          image-offset: 0x1200000
+          part: "hwpart 1"
+        - image: "/home/a0507040local/sdks/am62p/sdk11_0/mcu_plus_sdk_am62px_11_00_00_16/tools/boot/linuxAppimageGen/board/am62px-sk/u-boot.img"
+          image-offset: 0x280000
+          part: "hwpart 1"
