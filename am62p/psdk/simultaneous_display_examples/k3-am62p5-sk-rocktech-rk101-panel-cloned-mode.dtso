@@ -1,0 +1,107 @@
+// SPDX-License-Identifier: GPL-2.0-or-later OR MIT
+/**
+ * Rocktech Panel (single-link lvds) with AM62P-SK EVM in cloned mode
+ *
+ * AM62P-SKEVM: https://www.ti.com/tool/SK-AM62P-LP
+ *
+ * Copyright (C) 2024 Texas Instruments Incorporated - http://www.ti.com/
+ */
+
+/dts-v1/;
+/plugin/;
+
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/interrupt-controller/irq.h>
+
+&{/} {
+	display0 {
+		compatible = "rocktech,rk101ii01d-ct", "panel-simple";
+		port {
+			lcd0_in: endpoint {
+				remote-endpoint = <&oldi0_dss0_out>;
+			};
+		};
+	};
+
+	display1 {
+		compatible = "rocktech,rk101ii01d-ct", "panel-simple";
+		port {
+			lcd1_in: endpoint {
+				remote-endpoint = <&oldi1_dss0_out>;
+			};
+		};
+	};
+};
+
+&dss0 {
+	status = "okay";
+};
+
+&oldi0_dss0 {
+	status = "okay";
+	ti,companion-oldi = <&oldi1_dss0>;
+};
+
+&oldi1_dss0 {
+	status = "okay";
+	ti,secondary-oldi;
+};
+
+&oldi0_dss0_ports {
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+	port@0 {
+		reg = <0>;
+		oldi0_dss0_in: endpoint {
+			remote-endpoint = <&dss0_dpi0_out0>;
+		};
+	};
+
+	port@1 {
+		reg = <1>;
+		oldi0_dss0_out: endpoint {
+			remote-endpoint = <&lcd0_in>;
+		};
+	};
+};
+
+&oldi1_dss0_ports {
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+	port@0 {
+		reg = <0>;
+		oldi1_dss0_in: endpoint {
+			remote-endpoint = <&dss0_dpi0_out1>;
+		};
+	};
+
+	port@1 {
+		reg = <1>;
+		oldi1_dss0_out: endpoint {
+			remote-endpoint = <&lcd1_in>;
+		};
+	};
+};
+
+&dss0_ports {
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+	/* VP1: Output to OLDI */
+	port@0 {
+		reg = <0>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		dss0_dpi0_out0: endpoint@0 {
+			reg = <0>;
+			remote-endpoint = <&oldi0_dss0_in>;
+		};
+		dss0_dpi0_out1: endpoint@1 {
+			reg = <1>;
+			remote-endpoint = <&oldi1_dss0_in>;
+		};
+	};
+};
