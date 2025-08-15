@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<?ccsproject version="1.0"?>
+<projectOptions>
+	<ccsVariant value="50:Theia-based"/>
+	<ccsVersion value="70.1.1"/>
+	<deviceFamily value="TMS470"/>
+	<connection value="common/targetdb/connections/TIXDS110_Connection.xml"/>
+	<executableActions value=""/>
+	<createSlaveProjects value=""/>
+	<ignoreDefaultDeviceSettings value="true"/>
+	<ignoreDefaultCCSSettings value="true"/>
+	<activeTargetConfiguration value="targetConfigs/AM2434_ALV.ccxml"/>
+	<templateProperties value="id=example.projectspec.fsi_loopback_interrupt_am243x-evm_r5fss0-0_nortos_ti-arm-clang"/>
+	<isTargetConfigurationManual value="false"/>
+	<origin value="C:\ti\mcu_plus_sdk_am243x_10_01_00_32\examples\drivers\fsi\fsi_loopback_interrupt\am243x-evm\r5fss0-0_nortos\ti-arm-clang\example.projectspec"/>
+	<filesToOpen value=""/>
+</projectOptions>
