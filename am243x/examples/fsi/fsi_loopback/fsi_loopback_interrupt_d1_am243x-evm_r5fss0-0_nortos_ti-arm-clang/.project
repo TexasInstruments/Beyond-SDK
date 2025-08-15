@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<projectDescription>
+	<name>fsi_loopback_interrupt_d1_am243x-evm_r5fss0-0_nortos_ti-arm-clang</name>
+	<comment></comment>
+	<projects>
+	</projects>
+	<buildSpec>
+		<buildCommand>
+			<name>org.eclipse.cdt.managedbuilder.core.genmakebuilder</name>
+			<arguments>
+			</arguments>
+		</buildCommand>
+	</buildSpec>
+	<natures>
+		<nature>com.ti.ccstudio.core.ccsNature</nature>
+		<nature>org.eclipse.cdt.core.cnature</nature>
+		<nature>org.eclipse.cdt.managedbuilder.core.managedBuildNature</nature>
+		<nature>org.eclipse.cdt.core.ccnature</nature>
+	</natures>
+	<linkedResources>
+		<link>
+			<name>README.html</name>
+			<type>1</type>
+			<locationURI>MCU_PLUS_SDK_PATH/docs/api_guide_am243x/EXAMPLES_DRIVERS_FSI_LOOPBACK_INTERRUPT.html</locationURI>
+		</link>
+	</linkedResources>
+	<variableList>
+		<variable>
+			<name>MCU_PLUS_SDK_PATH</name>
+			<value>$%7BCOM_TI_MCU_PLUS_SDK_AM243X_INSTALL_DIR%7D</value>
+		</variable>
+	</variableList>
+</projectDescription>
