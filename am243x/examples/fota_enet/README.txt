@@ -1,0 +1,1 @@
+Import this example as is, and also the SBL OSPI example. After importing, configure the Compiler and Linker of the fota_enet example to the same configurations of Compiler and Linker of the Enet Layer-2 CPSW example
