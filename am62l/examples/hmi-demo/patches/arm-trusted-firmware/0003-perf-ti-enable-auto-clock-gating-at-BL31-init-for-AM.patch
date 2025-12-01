@@ -1,0 +1,51 @@
+From 6e791c14a56ae813f07932c24bd39cfd435eb9d3 Mon Sep 17 00:00:00 2001
+From: Kendall Willis <k-willis@ti.com>
+Date: Tue, 16 Jun 2026 11:36:38 -0500
+Subject: [PATCH 3/3] perf(ti): enable auto clock gating at BL31 init for AM62L
+
+Enable auto clock gating for all available modules.
+
+Change-Id: I8b101838d86d99ee19d9c1d2d1232964cb131b74
+Signed-off-by: Kendall Willis <k-willis@ti.com>
+---
+ plat/ti/k3low/common/am62l_bl31_setup.c | 4 ++++
+ plat/ti/k3low/include/platform_def.h    | 1 +
+ 2 files changed, 5 insertions(+)
+
+diff --git a/plat/ti/k3low/common/am62l_bl31_setup.c b/plat/ti/k3low/common/am62l_bl31_setup.c
+index 54da76395..8a77b91ba 100644
+--- a/plat/ti/k3low/common/am62l_bl31_setup.c
++++ b/plat/ti/k3low/common/am62l_bl31_setup.c
+@@ -6,6 +6,7 @@
+  */
+ 
+ #include <common/debug.h>
++#include <lib/mmio.h>
+ #include <lpm_stub.h>
+ #include <plat_private.h>
+ #include <plat_scmi_def.h>
+@@ -66,6 +67,9 @@ int ti_soc_init(void)
+ 	/* Apply firewall configurations over BL31 and BL32 memory regions */
+ 	update_fwl_configs();
+ 
++	/* Enable auto clock gating */
++	mmio_write_32(WKUP_CTRL_MMR0_BASE + WKUP_CTRL_MMR0_CLKGATE_CTRL0_OFFSET, 0x0U);
++
+ 	ret = ti_sci_proc_request(PLAT_PROC_START_ID);
+ 	if (ret != 0) {
+ 		ERROR("Unable to request host (%d)\n", ret);
+diff --git a/plat/ti/k3low/include/platform_def.h b/plat/ti/k3low/include/platform_def.h
+index 2063ebd03..20636bf16 100644
+--- a/plat/ti/k3low/include/platform_def.h
++++ b/plat/ti/k3low/include/platform_def.h
+@@ -22,6 +22,7 @@
+ #define EMIF_CTLCFG_SIZE UL(0x8000)
+ 
+ #define WKUP_CTRL_MMR0_DEVICE_RESET_OFFSET	UL(0x54000)
++#define WKUP_CTRL_MMR0_CLKGATE_CTRL0_OFFSET	UL(0x54050)
+ 
+ /* Device Control Region - covers PSC, PLL, and other control registers */
+ #define K3LOW_DEVCTRL_BASE    UL(0x200000)    /* Start of device control registers */
+-- 
+2.34.1
+
