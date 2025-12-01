@@ -1,0 +1,249 @@
+From 465d631094cff1cd7dd27f46865124e909737322 Mon Sep 17 00:00:00 2001
+From: Kendall Willis <k-willis@ti.com>
+Date: Tue, 29 Jul 2025 18:22:49 -0500
+Subject: [PATCH 1/2] arm64: dts: ti: k3-am62l: Minimal OS idle configuration
+
+Remove peripherals and pins from the device tree to provide maximum
+power savings.
+
+Signed-off-by: Kendall Willis <k-willis@ti.com>
+---
+ arch/arm64/boot/dts/ti/k3-am62l3-evm.dts | 172 ++++-------------------
+ 1 file changed, 26 insertions(+), 146 deletions(-)
+
+diff --git a/arch/arm64/boot/dts/ti/k3-am62l3-evm.dts b/arch/arm64/boot/dts/ti/k3-am62l3-evm.dts
+index 2dd056ce0538..af73802c0461 100644
+--- a/arch/arm64/boot/dts/ti/k3-am62l3-evm.dts
++++ b/arch/arm64/boot/dts/ti/k3-am62l3-evm.dts
+@@ -46,33 +46,6 @@ hdmi_connector_in: endpoint {
+ 		};
+ 	};
+ 
+-	gpio_keys: gpio-keys {
+-		compatible = "gpio-keys";
+-		autorepeat;
+-		pinctrl-names = "default";
+-		pinctrl-0 = <&usr_button_pins_default>;
+-
+-		usr: button-usr {
+-			label = "User Key";
+-			linux,code = <BTN_0>;
+-			gpios = <&main_gpio0 90 GPIO_ACTIVE_LOW>;
+-		};
+-	};
+-
+-	leds {
+-		compatible = "gpio-leds";
+-		pinctrl-names = "default";
+-		pinctrl-0 = <&usr_led_pins_default>;
+-
+-		led-0 {
+-			label = "am62-sk:green:heartbeat";
+-			gpios = <&main_gpio0 123 GPIO_ACTIVE_HIGH>;
+-			linux,default-trigger = "heartbeat";
+-			function = LED_FUNCTION_HEARTBEAT;
+-			default-state = "on";
+-		};
+-	};
+-
+ 	vmain_pd: regulator-0 {
+ 		/* TPS65988 PD CONTROLLER OUTPUT */
+ 		bootph-all;
+@@ -164,16 +137,6 @@ AM62LX_IOPAD(0x01b8, PIN_OUTPUT, 0)	/* (C13) UART0_TXD */
+ 		bootph-all;
+ 	};
+ 
+-	main_uart1_pins_default: main-uart1-default-pins {
+-		pinctrl-single,pins = <
+-			AM62LX_IOPAD(0x0180, PIN_INPUT, 2) /* (A8) MCASP0_AXR3.UART1_CTSn */
+-			AM62LX_IOPAD(0x0184, PIN_OUTPUT, 2) /* (B10) MCASP0_AXR2.UART1_RTSn */
+-			AM62LX_IOPAD(0x0198, PIN_INPUT, 2) /* (C11) MCASP0_AFSR.UART1_RXD */
+-			AM62LX_IOPAD(0x019c, PIN_OUTPUT, 2) /* (A12) MCASP0_ACLKR.UART1_TXD */
+-		>;
+-		bootph-all;
+-	};
+-
+ 	main_i2c0_pins_default: main-i2c0-default-pins {
+ 		pinctrl-single,pins = <
+ 			AM62LX_IOPAD(0x01cc, PIN_INPUT_PULLUP, 0) /* (B7) I2C0_SCL */
+@@ -190,32 +153,6 @@ AM62LX_IOPAD(0x01d8, PIN_INPUT_PULLUP, 0) /* (A6) I2C1_SDA */
+ 		bootph-all;
+ 	};
+ 
+-	main_i2c2_pins_default: main-i2c2-default-pins {
+-		pinctrl-single,pins = <
+-			AM62LX_IOPAD(0x01dc, PIN_INPUT_PULLUP, 0) /* (B8) I2C2_SCL */
+-			AM62LX_IOPAD(0x01e0, PIN_INPUT_PULLUP, 0) /* (D8) I2C2_SDA */
+-		>;
+-	};
+-
+-	ospi0_pins_default: ospi0-default-pins {
+-		bootph-all;
+-		pinctrl-single,pins = <
+-			AM62LX_IOPAD(0x003c, PIN_OUTPUT, 0) /* (D22) OSPI0_CLK */
+-			AM62LX_IOPAD(0x0068, PIN_OUTPUT, 0) /* (C20) OSPI0_CSn0 */
+-			AM62LX_IOPAD(0x0074, PIN_OUTPUT, 0) /* (C23) OSPI0_CSn3 */
+-			AM62LX_IOPAD(0x0048, PIN_INPUT, 0) /* (C22) OSPI0_D0 */
+-			AM62LX_IOPAD(0x004c, PIN_INPUT, 0) /* (D21) OSPI0_D1 */
+-			AM62LX_IOPAD(0x0050, PIN_INPUT, 0) /* (E23) OSPI0_D2 */
+-			AM62LX_IOPAD(0x0054, PIN_INPUT, 0) /* (D23) OSPI0_D3 */
+-			AM62LX_IOPAD(0x0058, PIN_INPUT, 0) /* (F21) OSPI0_D4 */
+-			AM62LX_IOPAD(0x005c, PIN_INPUT, 0) /* (F19) OSPI0_D5 */
+-			AM62LX_IOPAD(0x0060, PIN_INPUT, 0) /* (G20) OSPI0_D6 */
+-			AM62LX_IOPAD(0x0064, PIN_INPUT, 0) /* (F20) OSPI0_D7 */
+-			AM62LX_IOPAD(0x0044, PIN_INPUT, 0) /* (E22) OSPI0_DQS */
+-			AM62LX_IOPAD(0x0040, PIN_INPUT, 0) /* (E18) OSPI0_LBCLKO */
+-		>;
+-	};
+-
+ 	main_gpio0_ioexp_intr_pins_default: main-gpio0-ioexp-intr-default-pins {
+ 		pinctrl-single,pins = <
+ 			AM62LX_IOPAD(0x01b0, PIN_INPUT, 7) /* (B12) SPI0_D1.GPIO0_91 */
+@@ -223,18 +160,6 @@ AM62LX_IOPAD(0x01b0, PIN_INPUT, 7) /* (B12) SPI0_D1.GPIO0_91 */
+ 		bootph-all;
+ 	};
+ 
+-	usr_led_pins_default: usr-led-default-pins {
+-		pinctrl-single,pins = <
+-			AM62LX_IOPAD(0x0238, PIN_OUTPUT, 7) /* (D24) MMC1_SDWP.GPIO0_123 */
+-		>;
+-	};
+-
+-	usr_button_pins_default: usr-button-default-pins {
+-		pinctrl-single,pins = <
+-			AM62LX_IOPAD(0x01ac, PIN_INPUT, 7) /* (E12) SPI0_D0.GPIO0_90 */
+-		>;
+-	};
+-
+ 	main_mmc0_pins_default: main-mmc0-default-pins {
+ 		pinctrl-single,pins = <
+ 			AM62LX_IOPAD(0x0214, PIN_INPUT_PULLUP, 0) /* (D2) MMC0_CMD */
+@@ -299,20 +224,6 @@ AM62LX_IOPAD(0x00ec, PIN_OUTPUT, 5) /* (M23) GPMC0_CSn2.VOUT0_EXTPCLKIN */
+ 		bootph-all;
+ 	};
+ 
+-	main_mcan0_pins_default: main-mcan0-default-pins {
+-		pinctrl-single,pins = <
+-			AM62LX_IOPAD(0x01c8, PIN_INPUT, 0) /* (B15) MCAN0_RX */
+-			AM62LX_IOPAD(0x01c4, PIN_OUTPUT, 0) /* (B16) MCAN0_TX */
+-		>;
+-	};
+-
+-	main_mcan2_pins_default: main-mcan2-default-pins {
+-		pinctrl-single,pins = <
+-			AM62LX_IOPAD(0x01bc, PIN_INPUT, 6) /* (B14) UART0_CTSn.MCAN2_RX */
+-			AM62LX_IOPAD(0x01c0, PIN_OUTPUT, 6) /* (B13) UART0_RTSn.MCAN2_TX */
+-		>;
+-	};
+-
+ 	gpmc0_pins_default: gpmc0-default-pins {
+ 		pinctrl-single,pins = <
+ 			AM62LX_IOPAD(0x0078, PIN_INPUT, 0) /* (L22) GPMC0_AD0 */
+@@ -333,74 +244,17 @@ AM62LX_IOPAD(0x00dc, PIN_OUTPUT, 0) /* (N21) GPMC0_WPn */
+ 		>;
+ 	};
+ 
+-	rgmii1_pins_default: rgmii1-default-pins {
+-		pinctrl-single,pins = <
+-			AM62PX_IOPAD(0x0138, PIN_INPUT, 0) /* (Y8) RGMII1_RD0 */
+-			AM62PX_IOPAD(0x013c, PIN_INPUT, 0) /* (AA6) RGMII1_RD1 */
+-			AM62PX_IOPAD(0x0140, PIN_INPUT, 0) /* (AA8) RGMII1_RD2 */
+-			AM62PX_IOPAD(0x0144, PIN_INPUT, 0) /* (W8) RGMII1_RD3 */
+-			AM62PX_IOPAD(0x0134, PIN_INPUT, 0) /* (Y7) RGMII1_RXC */
+-			AM62PX_IOPAD(0x0130, PIN_INPUT, 0) /* (Y6) RGMII1_RX_CTL */
+-			AM62PX_IOPAD(0x0120, PIN_OUTPUT, 0) /* (AC10) RGMII1_TD0 */
+-			AM62PX_IOPAD(0x0124, PIN_OUTPUT, 0) /* (W13) RGMII1_TD1 */
+-			AM62PX_IOPAD(0x0128, PIN_OUTPUT, 0) /* (Y11) RGMII1_TD2 */
+-			AM62PX_IOPAD(0x012c, PIN_OUTPUT, 0) /* (AA11) RGMII1_TD3 */
+-			AM62PX_IOPAD(0x011c, PIN_OUTPUT, 0) /* (W11) RGMII1_TXC */
+-			AM62PX_IOPAD(0x0118, PIN_OUTPUT, 0) /* (AB11) RGMII1_TX_CTL */
+-		>;
+-	};
+-
+-	rgmii2_pins_default: rgmii2-default-pins {
+-		pinctrl-single,pins = <
+-			AM62PX_IOPAD(0x0170, PIN_INPUT, 0) /* (AB9) RGMII2_RD0 */
+-			AM62PX_IOPAD(0x0174, PIN_INPUT, 0) /* (AC9) RGMII2_RD1 */
+-			AM62PX_IOPAD(0x0178, PIN_INPUT, 0) /* (AB10) RGMII2_RD2 */
+-			AM62PX_IOPAD(0x017c, PIN_INPUT, 0) /* (AB8) RGMII2_RD3 */
+-			AM62PX_IOPAD(0x016c, PIN_INPUT, 0) /* (AC7) RGMII2_RXC */
+-			AM62PX_IOPAD(0x0168, PIN_INPUT, 0) /* (AC8) RGMII2_RX_CTL */
+-			AM62PX_IOPAD(0x0158, PIN_OUTPUT, 0) /* (AC12) RGMII2_TD0 */
+-			AM62PX_IOPAD(0x015c, PIN_OUTPUT, 0) /* (AB13) RGMII2_TD1 */
+-			AM62PX_IOPAD(0x0160, PIN_OUTPUT, 0) /* (AA12) RGMII2_TD2 */
+-			AM62PX_IOPAD(0x0164, PIN_OUTPUT, 0) /* (AA13) RGMII2_TD3 */
+-			AM62PX_IOPAD(0x0154, PIN_OUTPUT, 0) /* (Y13) RGMII2_TXC */
+-			AM62PX_IOPAD(0x0150, PIN_OUTPUT, 0) /* (AB12) RGMII2_TX_CTL */
+-		>;
+-	};
+-
+-	mdio1_pins_default: mdio1-default-pins {
+-		pinctrl-single,pins = <
+-			AM62PX_IOPAD(0x014c, PIN_OUTPUT, 0) /* (AC15) MDIO0_MDC */
+-			AM62PX_IOPAD(0x0148, PIN_INPUT, 0) /* (AC13) MDIO0_MDIO */
+-		>;
+-	};
+-
+ 	main_usb1_default_pins: main-usb1-default-pins {
+ 		pinctrl-single,pins = <
+ 			AM62LX_IOPAD(0x0248, PIN_INPUT | PIN_DS_PULLUD_ENABLE | PIN_DS_PULL_UP, 0) /* (A5) USB1_DRVVBUS */
+ 		>;
+ 	};
+ 
+-	main_mcasp0_pins_default: main-mcasp0-default-pins {
+-		pinctrl-single,pins = <
+-			AM62PX_IOPAD(0x0190, PIN_INPUT, 0) /* (A11) MCASP0_ACLKX */
+-			AM62PX_IOPAD(0x0194, PIN_INPUT, 0) /* (B11) MCASP0_AFSX */
+-			AM62PX_IOPAD(0x018c, PIN_INPUT, 0) /* (B9) MCASP0_AXR0 */
+-			AM62PX_IOPAD(0x0188, PIN_INPUT, 0) /* (A9) MCASP0_AXR1 */
+-		>;
+-	};
+-
+ 	pmic_irq_pins_default: pmic-irq-default-pins {
+ 		pinctrl-single,pins = <
+ 			AM62LX_IOPAD(0x01e8, PIN_INPUT, 0) /* (C8) EXTINTn */
+ 		>;
+ 	};
+-
+-	wkup_i2c0_pins_default: wkup-i2c0-default-pins {
+-		pinctrl-single,pins = <
+-			AM62LX_IOPAD(0x0010, PIN_INPUT_PULLUP, 0) /* (AB22) WKUP_I2C0_SCL */
+-			AM62LX_IOPAD(0x0014, PIN_INPUT_PULLUP, 0) /* (AA22) WKUP_I2C0_SDA */
+-		>;
+-	};
+ };
+ 
+ &main_uart0 {
+@@ -994,3 +848,29 @@ &mcasp0 {
+ 	       0 0 0 0
+ 	>;
+ };
++
++/delete-node/ &main_uart1;
++/delete-node/ &usbss0;
++/delete-node/ &usbss1;
++/delete-node/ &main_mcan0;
++/delete-node/ &main_mcan2;
++/delete-node/ &hdmi0;
++/delete-node/ &sii9022;
++/delete-node/ &dpi_out;
++/delete-node/ &codec_audio;
++/delete-node/ &crypto;
++/delete-node/ &tscadc0;
++/delete-node/ &cpsw3g;
++/delete-node/ &main_rti1;
++/delete-node/ &ospi0;
++/delete-node/ &mcasp0;
++/delete-node/ &mcasp1;
++/delete-node/ &mcasp2;
++/delete-node/ &wkup_i2c0;
++/delete-node/ &exp2;
++/delete-node/ &tlv320aic3106;
++/delete-node/ &main_i2c2;
++/delete-node/ &main_gpio2;
++/delete-node/ &main_bcdma;
++/delete-node/ &main_pktdma;
++/delete-node/ &main_rti0;
+-- 
+2.34.1
+

@@ -1,0 +1,36 @@
+From ed4460d4f191ed907cb58dc32f47943bcbe25eb8 Mon Sep 17 00:00:00 2001
+From: Kendall Willis <k-willis@ti.com>
+Date: Mon, 1 Dec 2025 17:26:41 -0600
+Subject: [PATCH] submodules: lv_port_linux: Point submodule to fork with
+ simple high res
+
+In order to add simple high res demo point to the fork of lv_port_linux
+which has the lvgl fork with the high res demo.
+
+Signed-off-by: Kendall Willis <k-willis@ti.com>
+---
+ .gitmodules   | 3 ++-
+ lv_port_linux | 2 +-
+ 2 files changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/.gitmodules b/.gitmodules
+index 231d995..b150e53 100644
+--- a/.gitmodules
++++ b/.gitmodules
+@@ -1,4 +1,5 @@
+ 
+ [submodule "lv_port_linux"]
+ 	path = lv_port_linux
+-	url = https://github.com/texasinstruments/lv_port_linux.git
++	url = https://github.com/kwillis01/lv_port_linux.git
++	branch = hmi-simple-demo
+diff --git a/lv_port_linux b/lv_port_linux
+index c9db7d3..9462ebc 160000
+--- a/lv_port_linux
++++ b/lv_port_linux
+@@ -1 +1 @@
+-Subproject commit c9db7d38291cac2461e26907c055eeaee99e71c8
++Subproject commit 9462ebc116495e186109d8346d9cc348594da838
+-- 
+2.34.1
+
