@@ -84,9 +84,9 @@ int32_t Psram_ospiOpen(Psram_Config *config)
 
          ospi_cs_dly_cfg(pReg,0x0,0x0,0x1,0x1 ); //CS delay is also done in Drivers_ospiOpen() -> OSPI_open() -> OSPI_programInstance() -> devDelay -> { 10, 10, 10, 10 };. Do we need to redo it here?
 
-         //Summary: Configuring for Fixed Latency= 4Cyles, 16Byte Burst length
-         uint32_t MR0 = OSPI_PSRAM_APS6408_MR0_DRIVE_STRENGTH + OSPI_PSRAM_APS6408_MR0_RLC_3 + OSPI_PSRAM_APS6408_MR0_LATENCY_TYPE;    // Fixed Latency, Drive Strength =3, Read Latency Code =4
-         uint32_t MR4 = OSPI_PSRAM_APS6408_MR4_WLC_3;    // Write Latency Code =4
+         //Summary: Configuring for Fixed Latency= 3 Cycles, 16Byte Burst length
+         uint32_t MR0 = OSPI_PSRAM_APS6408_MR0_DRIVE_STRENGTH + OSPI_PSRAM_APS6408_MR0_RLC_3 + OSPI_PSRAM_APS6408_MR0_LATENCY_TYPE;    // Fixed Latency, Drive Strength =3, Read Latency Code =3 (3 cycles)
+         uint32_t MR4 = OSPI_PSRAM_APS6408_MR4_WLC_3;    // Write Latency Code =3 (3 cycles)
          uint32_t MR8 = OSPI_PSRAM_APS6408_MR8_BT;    // 16 Byte Hybrid Wrap
 
          ospi_stig_cmd_addr(pReg,OSPI_PSRAM_APS6408_MR0_ADDRESS);
