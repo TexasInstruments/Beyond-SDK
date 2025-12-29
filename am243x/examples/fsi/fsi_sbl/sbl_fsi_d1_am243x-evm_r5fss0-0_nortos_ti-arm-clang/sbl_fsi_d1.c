@@ -47,7 +47,7 @@
  * The application configures an instance of FSI TX and FSI RX module with the below configuration:
  *
  * - Single lane
- * - TX clock at 50 MHz
+ * - TX clock at 40 MHz
  * - 16 words per frame (transfer)
  * - Register both FSI TX interrupt 1 and FSI RX interrupt 1
  *
@@ -56,7 +56,7 @@
  * It receives the application image back from Node and compares the data. Then it waits for the Node to send back the MAGIC WORD indicating that the application image was received successfully.
  */
 
-/* FSI TXCLK - 50 MHz */
+/* FSI TXCLK - 40 MHz */
 #define FSI_APP_TXCLK_FREQ              (40 * 1000 * 1000)
 /* FSI module input clock - 500 MHz */
 #define FSI_APP_CLK_FREQ                (CONFIG_FSI_TX0_CLK)

@@ -31,7 +31,7 @@
 #### FSI LEAD (D1)
 ##### Application fsi_loopback_interrupt_d1
 Below is a brief explanation of fsi_loopback_interrupt_d1:
-- Configure I2C IO expander for FSI connection
+- **Configure I2C IO expander (EVM ONLY)** - Required to select FSI over GPMC via hardware mux. LaunchPad not needed (mux defaults to FSI). [Details](https://e2e.ti.com/support/microcontrollers/arm-based-microcontrollers-group/arm-based-microcontrollers/f/arm-based-microcontrollers-forum/1374607)
 - Initialize FSI
 - Lead (D1) starts FSI handshake with node (D2)
 - After handshake, FSI data frames are sent in loopback to node (D2)
@@ -39,7 +39,7 @@ Below is a brief explanation of fsi_loopback_interrupt_d1:
 #### FSI Node (D2)
 ##### Application fsi_loopback_interrupt_d2
 Below is a brief explanation of fsi_loopback_interrupt_d2:
-- Configure I2C IO expander for FSI connection
+- **Configure I2C IO expander (EVM ONLY)** - Required to select FSI over GPMC via hardware mux. LaunchPad not needed (mux defaults to FSI). [Details](https://e2e.ti.com/support/microcontrollers/arm-based-microcontrollers-group/arm-based-microcontrollers/f/arm-based-microcontrollers-forum/1374607)
 - Initialize FSI
 - Perform the FSI handshake with D1
 - After handshake is received, D2 starts receiving and sending back data frames to lead (D1)

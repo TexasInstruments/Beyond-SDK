@@ -47,7 +47,7 @@
  * The application configures an instance of FSI TX and FSI RX module with below configuration
  *
  * - Single lane
- * - TX clock at 50 MHz
+ * - TX clock at 1 MHz
  * - 16 words per frame (transfer)
  * - Register both FSI TX interrupt 1 and FSI RX interrupt 1
  *
@@ -57,7 +57,7 @@
  * Once the transfer it completes, it compares the source and destination buffers for any data mismatch.
  */
 
-/* FSI TXCLK - 50 MHz */
+/* FSI TXCLK - 1 MHz */
 #define FSI_APP_TXCLK_FREQ              (1 * 1000 * 1000)
 /* FSI module input clock - 500 MHz */
 #define FSI_APP_CLK_FREQ                (CONFIG_FSI_TX0_CLK)
