@@ -1,6 +1,6 @@
-From c5e7cf48714d65a7cbf6854ae55cb4a6bf79f564 Mon Sep 17 00:00:00 2001
+From ad8c49ce2b7bee9518c04951ca55f66dcd7dfe39 Mon Sep 17 00:00:00 2001
 From: Paresh Bhagat <p-bhagat@ti.com>
-Date: Wed, 18 Mar 2026 16:34:01 +0530
+Date: Tue, 26 May 2026 19:44:55 +0530
 Subject: [PATCH] ti-apps-launcher: Remove pulseaudio-service dependency
 
 Remove pulseaudio-service from RDEPENDS as we transition to PipeWire
@@ -12,7 +12,7 @@ Signed-off-by: Paresh Bhagat <p-bhagat@ti.com>
  1 file changed, 1 deletion(-)
 
 diff --git a/meta-ti-foundational/recipes-demos/ti-apps-launcher/ti-apps-launcher.bb b/meta-ti-foundational/recipes-demos/ti-apps-launcher/ti-apps-launcher.bb
-index ea7a6b6..7f7ce4f 100644
+index 12701f6..212fec7 100644
 --- a/meta-ti-foundational/recipes-demos/ti-apps-launcher/ti-apps-launcher.bb
 +++ b/meta-ti-foundational/recipes-demos/ti-apps-launcher/ti-apps-launcher.bb
 @@ -34,7 +34,6 @@ RDEPENDS:${PN} = "\
@@ -20,9 +20,9 @@ index ea7a6b6..7f7ce4f 100644
      bash \
      seva-launcher \
 -    pulseaudio-service \
+     qmltermwidget \
      qtdeclarative-qmlplugins \
      qtwayland-qmlplugins \
-     qtdeclarative-tools \
 -- 
 2.34.1
 
