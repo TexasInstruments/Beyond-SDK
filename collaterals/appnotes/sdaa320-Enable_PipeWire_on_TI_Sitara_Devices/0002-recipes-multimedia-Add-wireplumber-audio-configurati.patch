@@ -1,0 +1,138 @@
+From 25ffa993dc8b2a1ae8c2c40bed79b6e0ddfdc3b5 Mon Sep 17 00:00:00 2001
+From: Paresh Bhagat <p-bhagat@ti.com>
+Date: Sun, 8 Feb 2026 16:26:11 +0530
+Subject: [PATCH 2/3] recipes-multimedia: Add wireplumber audio configuration
+
+- Add set-audio-defaults.sh script for audio setup
+- Add set-audio-defaults.service systemd service
+- Add wireplumber_%.bbappend recipe extension
+
+Signed-off-by: Paresh Bhagat <p-bhagat@ti.com>
+---
+ .../wireplumber/wireplumber-arago.inc         | 33 +++++++++++++++++++
+ .../wireplumber/set-audio-defaults.service    | 21 ++++++++++++
+ .../wireplumber/set-audio-defaults.sh         | 32 ++++++++++++++++++
+ .../wireplumber/wireplumber_%.bbappend        |  4 +++
+ 4 files changed, 90 insertions(+)
+ create mode 100644 meta-arago-distro/recipes-multimedia/wireplumber/wireplumber-arago.inc
+ create mode 100644 meta-arago-distro/recipes-multimedia/wireplumber/wireplumber/set-audio-defaults.service
+ create mode 100755 meta-arago-distro/recipes-multimedia/wireplumber/wireplumber/set-audio-defaults.sh
+ create mode 100644 meta-arago-distro/recipes-multimedia/wireplumber/wireplumber_%.bbappend
+
+diff --git a/meta-arago-distro/recipes-multimedia/wireplumber/wireplumber-arago.inc b/meta-arago-distro/recipes-multimedia/wireplumber/wireplumber-arago.inc
+new file mode 100644
+index 00000000..6325d26c
+--- /dev/null
++++ b/meta-arago-distro/recipes-multimedia/wireplumber/wireplumber-arago.inc
+@@ -0,0 +1,33 @@
++PR:append = ".arago1"
++
++FILESEXTRAPATHS:prepend:am62dxx-evm := "${THISDIR}/wireplumber:"
++
++SRC_URI:append:am62dxx-evm = " \
++    file://set-audio-defaults.sh \
++    file://set-audio-defaults.service \
++"
++
++inherit systemd
++
++# Enable wireplumber for all platforms
++SYSTEMD_PACKAGES = "${PN}"
++SYSTEMD_SERVICE:${PN} = "wireplumber.service"
++SYSTEMD_AUTO_ENABLE:${PN} = "enable"
++
++do_install:append:am62dxx-evm() {
++    # Install the script
++    install -d ${D}${bindir}
++    install -m 0755 ${UNPACKDIR}/set-audio-defaults.sh ${D}${bindir}/
++
++    # Install the systemd service file
++    install -d ${D}${systemd_system_unitdir}
++    install -m 0644 ${UNPACKDIR}/set-audio-defaults.service ${D}${systemd_system_unitdir}/
++}
++
++SYSTEMD_PACKAGES:am62dxx-evm = "${PN}"
++SYSTEMD_SERVICE:${PN}:am62dxx-evm = "wireplumber.service set-audio-defaults.service"
++SYSTEMD_AUTO_ENABLE:${PN}:am62dxx-evm = "enable"
++
++FILES:${PN} += " \
++    ${bindir} \
++"
+diff --git a/meta-arago-distro/recipes-multimedia/wireplumber/wireplumber/set-audio-defaults.service b/meta-arago-distro/recipes-multimedia/wireplumber/wireplumber/set-audio-defaults.service
+new file mode 100644
+index 00000000..191b89f5
+--- /dev/null
++++ b/meta-arago-distro/recipes-multimedia/wireplumber/wireplumber/set-audio-defaults.service
+@@ -0,0 +1,21 @@
++[Unit]
++Description=Set PipeWire Default Audio Devices
++# Wait for pipewire and wireplumber services to be started
++After=pipewire.service wireplumber.service
++# Ensure udev has settled so audio devices are available
++After=systemd-udev-settle.service
++Wants=pipewire.service wireplumber.service
++
++[Service]
++Type=oneshot
++ExecStart=/usr/bin/set-audio-defaults.sh
++StandardOutput=append:/var/log/set-audio-defaults-output.log
++StandardError=append:/var/log/set-audio-defaults-error.log
++RemainAfterExit=yes
++TimeoutStartSec=90
++# Restart on failure with delay
++Restart=on-failure
++RestartSec=5
++
++[Install]
++WantedBy=multi-user.target
+diff --git a/meta-arago-distro/recipes-multimedia/wireplumber/wireplumber/set-audio-defaults.sh b/meta-arago-distro/recipes-multimedia/wireplumber/wireplumber/set-audio-defaults.sh
+new file mode 100755
+index 00000000..49be177e
+--- /dev/null
++++ b/meta-arago-distro/recipes-multimedia/wireplumber/wireplumber/set-audio-defaults.sh
+@@ -0,0 +1,32 @@
++#!/bin/sh
++
++# Wait for WirePlumber to be ready
++i=1
++while [ "$i" -le 30 ]; do
++    wpctl status >/dev/null 2>&1 && break
++    sleep 1
++    i=$((i + 1))
++done
++
++# Additional delay for nodes to appear
++sleep 2
++
++# Find audio sink ID
++SINK_ID=$(pw-cli info alsa_audio_sink 2>/dev/null | head -n 1 | awk '{print $2}')
++if [ -n "$SINK_ID" ]; then
++    wpctl set-default "$SINK_ID"
++    echo "Set default sink to ID: $SINK_ID (alsa_audio_sink)"
++else
++    echo "Could not find alsa_audio_sink"
++fi
++
++# Find audio source ID
++SOURCE_ID=$(pw-cli info alsa_audio_source 2>/dev/null | head -n 1 | awk '{print $2}')
++if [ -n "$SOURCE_ID" ]; then
++    wpctl set-default "$SOURCE_ID"
++    echo "Set default source to ID: $SOURCE_ID (alsa_audio_source)"
++else
++    echo "Could not find alsa_audio_source"
++fi
++
++echo "Done"
+diff --git a/meta-arago-distro/recipes-multimedia/wireplumber/wireplumber_%.bbappend b/meta-arago-distro/recipes-multimedia/wireplumber/wireplumber_%.bbappend
+new file mode 100644
+index 00000000..541b2963
+--- /dev/null
++++ b/meta-arago-distro/recipes-multimedia/wireplumber/wireplumber_%.bbappend
+@@ -0,0 +1,4 @@
++WIREPLUMBER_ARAGO = ""
++WIREPLUMBER_ARAGO:arago = "wireplumber-arago.inc"
++
++require ${WIREPLUMBER_ARAGO}
+-- 
+2.34.1
+
