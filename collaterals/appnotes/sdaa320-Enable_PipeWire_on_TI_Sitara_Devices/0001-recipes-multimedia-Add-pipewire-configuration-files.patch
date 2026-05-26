@@ -1,0 +1,169 @@
+From a95e2a29abfe03e754e5ec136c96b85671ca9b83 Mon Sep 17 00:00:00 2001
+From: Paresh Bhagat <p-bhagat@ti.com>
+Date: Sun, 8 Feb 2026 16:25:54 +0530
+Subject: [PATCH 1/3] recipes-multimedia: Add pipewire configuration files
+
+- Add 90-pipewire-sink.conf and 91-pipewire-source.conf for 8 channel
+  audio playback and capture.
+- Add pipewire_%.bbappend recipe extension
+- Add new pipewire.service file
+
+Signed-off-by: Paresh Bhagat <p-bhagat@ti.com>
+---
+ .../pipewire/pipewire-arago.inc               | 28 ++++++++++++++
+ .../am62dxx-evm/90-pipewire-sink.conf         | 21 +++++++++++
+ .../am62dxx-evm/91-pipewire-source.conf       | 21 +++++++++++
+ .../pipewire/pipewire/pipewire.service        | 37 +++++++++++++++++++
+ .../pipewire/pipewire_%.bbappend              |  4 ++
+ 5 files changed, 111 insertions(+)
+ create mode 100644 meta-arago-distro/recipes-multimedia/pipewire/pipewire-arago.inc
+ create mode 100644 meta-arago-distro/recipes-multimedia/pipewire/pipewire/am62dxx-evm/90-pipewire-sink.conf
+ create mode 100644 meta-arago-distro/recipes-multimedia/pipewire/pipewire/am62dxx-evm/91-pipewire-source.conf
+ create mode 100644 meta-arago-distro/recipes-multimedia/pipewire/pipewire/pipewire.service
+ create mode 100644 meta-arago-distro/recipes-multimedia/pipewire/pipewire_%.bbappend
+
+diff --git a/meta-arago-distro/recipes-multimedia/pipewire/pipewire-arago.inc b/meta-arago-distro/recipes-multimedia/pipewire/pipewire-arago.inc
+new file mode 100644
+index 00000000..b3e0c555
+--- /dev/null
++++ b/meta-arago-distro/recipes-multimedia/pipewire/pipewire-arago.inc
+@@ -0,0 +1,28 @@
++PR:append = ".arago1"
++
++# Pipewire service for all platforms
++FILESEXTRAPATHS:prepend := "${THISDIR}/pipewire:"
++SRC_URI:append = " file://pipewire.service"
++
++# AM62D-specific config files
++FILESEXTRAPATHS:prepend:am62dxx-evm := "${THISDIR}/pipewire:"
++SRC_URI:append:am62dxx-evm = " \
++    file://90-pipewire-sink.conf \
++    file://91-pipewire-source.conf \
++"
++
++do_install:append() {
++    install -d ${D}${systemd_system_unitdir}
++    install -m 0644 ${UNPACKDIR}/pipewire.service ${D}${systemd_system_unitdir}/
++}
++
++do_install:append:am62dxx-evm() {
++    install -d ${D}${sysconfdir}/pipewire/pipewire.conf.d
++    install -m 0644 ${UNPACKDIR}/90-pipewire-sink.conf ${D}${sysconfdir}/pipewire/pipewire.conf.d/
++    install -m 0644 ${UNPACKDIR}/91-pipewire-source.conf ${D}${sysconfdir}/pipewire/pipewire.conf.d/
++}
++
++FILES:${PN} += " ${sysconfdir}"
++
++PACKAGECONFIG:append = " pipewire-jack"
++PACKAGECONFIG:remove = "jack"
+diff --git a/meta-arago-distro/recipes-multimedia/pipewire/pipewire/am62dxx-evm/90-pipewire-sink.conf b/meta-arago-distro/recipes-multimedia/pipewire/pipewire/am62dxx-evm/90-pipewire-sink.conf
+new file mode 100644
+index 00000000..86481af6
+--- /dev/null
++++ b/meta-arago-distro/recipes-multimedia/pipewire/pipewire/am62dxx-evm/90-pipewire-sink.conf
+@@ -0,0 +1,21 @@
++# PipeWire source configuration for AM62D.
++
++context.objects = [
++    {
++        factory = adapter
++        args = {
++            factory.name           = api.alsa.pcm.sink
++            node.name              = "alsa_audio_sink"
++            node.description       = "Audio Output"
++            media.class            = "Audio/Sink"
++            api.alsa.period-size   = 1024
++            api.alsa.headroom      = 0
++            api.alsa.disable-mmap  = false
++            api.alsa.disable-batch = false
++            api.alsa.path          = "hw:AM62D2EVM,0"
++            audio.rate             = 48000
++            audio.channels         = 8
++            audio.position         = [ FL FR FC LFE RL RR SL SR ]
++        }
++    }
++]
+diff --git a/meta-arago-distro/recipes-multimedia/pipewire/pipewire/am62dxx-evm/91-pipewire-source.conf b/meta-arago-distro/recipes-multimedia/pipewire/pipewire/am62dxx-evm/91-pipewire-source.conf
+new file mode 100644
+index 00000000..71b7ec76
+--- /dev/null
++++ b/meta-arago-distro/recipes-multimedia/pipewire/pipewire/am62dxx-evm/91-pipewire-source.conf
+@@ -0,0 +1,21 @@
++# PipeWire source configuration for AM62D.
++
++context.objects = [
++    {
++        factory = adapter
++        args = {
++            factory.name           = api.alsa.pcm.source
++            node.name              = "alsa_audio_source"
++            node.description       = "Audio Input"
++            media.class            = "Audio/Source"
++            api.alsa.period-size   = 1024
++            api.alsa.headroom      = 0
++            api.alsa.disable-mmap  = false
++            api.alsa.disable-batch = false
++            api.alsa.path          = "hw:AM62D2EVM,0"
++            audio.rate             = 48000
++            audio.channels         = 8
++            audio.position         = [ FL FR FC LFE RL RR SL SR ]
++        }
++    }
++]
+diff --git a/meta-arago-distro/recipes-multimedia/pipewire/pipewire/pipewire.service b/meta-arago-distro/recipes-multimedia/pipewire/pipewire/pipewire.service
+new file mode 100644
+index 00000000..29b1775e
+--- /dev/null
++++ b/meta-arago-distro/recipes-multimedia/pipewire/pipewire/pipewire.service
+@@ -0,0 +1,37 @@
++[Unit]
++Description=PipeWire Multimedia Service
++# Ensure kernel modules are loaded and udev has finished device processing
++After=systemd-modules-load.service systemd-udev-settle.service
++
++# We require pipewire.socket to be active before starting the daemon, because
++# while it is possible to use the service without the socket, it is not clear
++# why it would be desirable.
++#
++# Installing pipewire and doing `systemctl start pipewire` will not get the
++# socket started, which might be confusing and problematic if the server is to
++# be restarted later on, as the client autospawn feature might kick in. Also, a
++# start of the socket unit will fail, adding to the confusion.
++#
++# After=pipewire.socket is not needed, as it is already implicit in the
++# socket-service relationship, see systemd.socket(5).
++Requires=pipewire.socket
++
++[Service]
++LockPersonality=yes
++MemoryDenyWriteExecute=yes
++NoNewPrivileges=yes
++SystemCallArchitectures=native
++SystemCallFilter=@system-service
++Type=simple
++AmbientCapabilities=CAP_SYS_NICE
++ExecStart=/usr/bin/pipewire
++Restart=on-failure
++RestartSec=2
++RuntimeDirectory=pipewire
++RuntimeDirectoryPreserve=yes
++User=pipewire
++Environment=PIPEWIRE_RUNTIME_DIR=%t/pipewire
++
++[Install]
++Also=pipewire.socket pipewire-manager.socket
++WantedBy=default.target
+\ No newline at end of file
+diff --git a/meta-arago-distro/recipes-multimedia/pipewire/pipewire_%.bbappend b/meta-arago-distro/recipes-multimedia/pipewire/pipewire_%.bbappend
+new file mode 100644
+index 00000000..dc32422b
+--- /dev/null
++++ b/meta-arago-distro/recipes-multimedia/pipewire/pipewire_%.bbappend
+@@ -0,0 +1,4 @@
++PIPEWIRE_ARAGO = ""
++PIPEWIRE_ARAGO:arago = "pipewire-arago.inc"
++
++require ${PIPEWIRE_ARAGO}
+-- 
+2.34.1
+
