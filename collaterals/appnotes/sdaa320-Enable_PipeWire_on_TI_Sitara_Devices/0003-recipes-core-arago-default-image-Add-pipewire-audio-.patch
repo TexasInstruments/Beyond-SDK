@@ -1,0 +1,54 @@
+From d1e1bde6a986d1fc760023be07e37b506f8dc9e8 Mon Sep 17 00:00:00 2001
+From: Paresh Bhagat <p-bhagat@ti.com>
+Date: Tue, 17 Feb 2026 23:01:01 +0530
+Subject: [PATCH 3/3] recipes-core: arago-default-image: Add pipewire audio
+ stack support
+
+Add pipewire and wireplumber audio stack support for all am62* devices.
+- Include pipewire core components and tools.
+- Include wireplumber session manager.
+- Add GStreamer pipewire plugin.
+- Configure pipewire with proper modules and plugins.
+
+Signed-off-by: Paresh Bhagat <p-bhagat@ti.com>
+---
+ .../images/arago-default-image.bb             | 26 +++++++++++++++++++
+ 1 file changed, 26 insertions(+)
+
+diff --git a/meta-arago-distro/recipes-core/images/arago-default-image.bb b/meta-arago-distro/recipes-core/images/arago-default-image.bb
+index e01f7c2f..b93534fc 100644
+--- a/meta-arago-distro/recipes-core/images/arago-default-image.bb
++++ b/meta-arago-distro/recipes-core/images/arago-default-image.bb
+@@ -43,3 +43,29 @@ IMAGE_INSTALL += "\
+     ${DEVTOOLS} \
+     docker \
+ "
++
++PIPEWIRE = " \
++    gstreamer1.0-pipewire \
++    libpipewire \
++    lua \
++    pipewire \
++    pipewire-alsa \
++    pipewire-alsa-card-profile \
++    pipewire-dev \
++    pipewire-modules-meta \
++    pipewire-pulse \
++    pipewire-spa-plugins-meta \
++    pipewire-spa-tools \
++    pipewire-tools \
++    speexdsp \
++    wireplumber \
++    wireplumber-dev \
++"
++
++IMAGE_INSTALL:append:am62dxx-evm = " ${PIPEWIRE}"
++IMAGE_INSTALL:append:am62xx-evm = " ${PIPEWIRE}"
++IMAGE_INSTALL:append:am62pxx-evm = " ${PIPEWIRE}"
++IMAGE_INSTALL:append:am62xx-lp-evm = " ${PIPEWIRE}"
++IMAGE_INSTALL:append:am62axx-evm = " ${PIPEWIRE}"
++IMAGE_INSTALL:append:am62xxsip-evm = " ${PIPEWIRE}"
++IMAGE_INSTALL:append:am62lxx-evm = " ${PIPEWIRE}"
+-- 
+2.34.1
+
