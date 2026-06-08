@@ -1,0 +1,28 @@
+From 357b2097f162746994d25f0081d73fd57c204438 Mon Sep 17 00:00:00 2001
+From: Aryamaan Chaurasia <a-chaurasia@ti.com>
+Date: Tue, 23 Jun 2026 16:21:44 +0530
+Subject: [PATCH 2/2] AM243x: bootloader: Disable security handover
+
+- Comment out Bootloader_socSecHandover()
+
+Signed-off-by: Aryamaan Chaurasia <a-chaurasia@ti.com>
+---
+ source/drivers/bootloader/soc/am64x_am243x/bootloader_soc.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/source/drivers/bootloader/soc/am64x_am243x/bootloader_soc.c b/source/drivers/bootloader/soc/am64x_am243x/bootloader_soc.c
+index eca61e91..78d13db2 100644
+--- a/source/drivers/bootloader/soc/am64x_am243x/bootloader_soc.c
++++ b/source/drivers/bootloader/soc/am64x_am243x/bootloader_soc.c
+@@ -979,7 +979,7 @@ int32_t Bootloader_socCpuResetReleaseSelf(void)
+         }
+         if(status==SystemP_SUCCESS)
+         {
+-            status = Bootloader_socSecHandover();
++            // status = Bootloader_socSecHandover();
+         }
+         if(status==SystemP_SUCCESS)
+         {
+-- 
+2.34.1
+
