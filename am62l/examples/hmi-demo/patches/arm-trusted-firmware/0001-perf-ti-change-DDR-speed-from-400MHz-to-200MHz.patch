@@ -1,0 +1,32 @@
+From afe7c39aeeb6539dd261e68feb1fa4a54938b283 Mon Sep 17 00:00:00 2001
+From: Kendall Willis <k-willis@ti.com>
+Date: Fri, 12 Jun 2026 13:49:58 -0500
+Subject: [PATCH 1/3] perf(ti): change DDR speed from 400MHz to 200MHz
+
+In order to gain power savings from the DDR, slow it down by half in
+order to slow the transfer speed from 1600MT/s to 800MT/s.
+
+Change-Id: Ib6302f0d1b26c60faa0270c2f50a759acb5ab951
+Signed-off-by: Kendall Willis <k-willis@ti.com>
+---
+ fdts/am62lx-skevm-lp4-50-800.dtsi | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/fdts/am62lx-skevm-lp4-50-800.dtsi b/fdts/am62lx-skevm-lp4-50-800.dtsi
+index a498030c5..9daba8d6b 100644
+--- a/fdts/am62lx-skevm-lp4-50-800.dtsi
++++ b/fdts/am62lx-skevm-lp4-50-800.dtsi
+@@ -11,8 +11,8 @@
+ */
+ 
+ #define DDRSS_PLL_FHS_CNT 3
+-#define DDRSS_PLL_FREQUENCY_1 400000000
+-#define DDRSS_PLL_FREQUENCY_2 400000000
++#define DDRSS_PLL_FREQUENCY_1 200000000
++#define DDRSS_PLL_FREQUENCY_2 200000000
+ #define DDRSS_SDRAM_IDX 15
+ #define DDRSS_REGION_IDX 15
+ 
+-- 
+2.34.1
+

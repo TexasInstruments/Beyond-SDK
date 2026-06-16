@@ -1,0 +1,240 @@
+From 65e1f63e98c0d04807e947f8bd30628bc1f63402 Mon Sep 17 00:00:00 2001
+From: Kendall Willis <k-willis@ti.com>
+Date: Fri, 12 Jun 2026 12:52:36 -0500
+Subject: [PATCH 1/2] arm64: dts: ti: create minimal dts for HMI application
+
+Create a minimal device tree for an HMI application that works with the
+k3-am62l3-evm-dsi-rpi-7inch-panel.dtso overlay for the RPI 7 inch DSI
+display. The minimal device tree aims to reduce power by not including
+devices that are not used in the HMI use case.
+
+Signed-off-by: Kendall Willis <k-willis@ti.com>
+---
+ arch/arm64/boot/dts/ti/Makefile               |   3 +
+ .../ti/k3-am62l3-evm-dsi-rpi-7inch-panel.dtso |   4 -
+ arch/arm64/boot/dts/ti/k3-am62l3-evm-hmi.dts  | 180 ++++++++++++++++++
+ 3 files changed, 183 insertions(+), 4 deletions(-)
+ create mode 100644 arch/arm64/boot/dts/ti/k3-am62l3-evm-hmi.dts
+
+diff --git a/arch/arm64/boot/dts/ti/Makefile b/arch/arm64/boot/dts/ti/Makefile
+index cb2623885b0c..5b61be824f75 100644
+--- a/arch/arm64/boot/dts/ti/Makefile
++++ b/arch/arm64/boot/dts/ti/Makefile
+@@ -67,6 +67,7 @@ dtb-$(CONFIG_ARCH_K3) += k3-am62l3-badge.dtb
+ 
+ # Boards with AM62Lx SoCs
+ dtb-$(CONFIG_ARCH_K3) += k3-am62l3-evm.dtb
++dtb-$(CONFIG_ARCH_K3) += k3-am62l3-evm-hmi.dtb
+ dtb-$(CONFIG_ARCH_K3) += k3-am62l3-evm-dsi-rpi-7inch-panel.dtbo
+ dtb-$(CONFIG_ARCH_K3) += k3-am62l3-evm-lpm-wkup-sources.dtbo
+ dtb-$(CONFIG_ARCH_K3) += k3-am62l3-evm-m2-cc3351.dtbo
+@@ -433,6 +434,8 @@ k3-j784s4-evm-usxgmii-exp1-exp2-dtbs := k3-j784s4-evm.dtb \
+ 	k3-j784s4-evm-usxgmii-exp1-exp2.dtbo
+ k3-am62l3-evm-dsi-rpi-7inch-panel-dtbs := k3-am62l3-evm.dtb \
+ 	k3-am62l3-evm-dsi-rpi-7inch-panel.dtbo
++k3-am62l3-evm-hmi-dsi-rpi-7inch-panel-dtbs := k3-am62l3-evm-hmi.dtb \
++	k3-am62l3-evm-dsi-rpi-7inch-panel.dtbo
+ k3-am62l3-evm-nand-dtbs := k3-am62l3-evm.dtb \
+ 	k3-am62l3-evm-nand.dtbo
+ k3-am62l3-evm-tida-010939-dtbs := k3-am62l3-evm.dtb \
+diff --git a/arch/arm64/boot/dts/ti/k3-am62l3-evm-dsi-rpi-7inch-panel.dtso b/arch/arm64/boot/dts/ti/k3-am62l3-evm-dsi-rpi-7inch-panel.dtso
+index 4964469be515..83b7b4204e21 100644
+--- a/arch/arm64/boot/dts/ti/k3-am62l3-evm-dsi-rpi-7inch-panel.dtso
++++ b/arch/arm64/boot/dts/ti/k3-am62l3-evm-dsi-rpi-7inch-panel.dtso
+@@ -131,7 +131,3 @@ &dphy_tx0 {
+ &dsi0 {
+ 	status = "okay";
+ };
+-
+-&sii9022 {
+-	status = "disabled";
+-};
+diff --git a/arch/arm64/boot/dts/ti/k3-am62l3-evm-hmi.dts b/arch/arm64/boot/dts/ti/k3-am62l3-evm-hmi.dts
+new file mode 100644
+index 000000000000..e11aca006505
+--- /dev/null
++++ b/arch/arm64/boot/dts/ti/k3-am62l3-evm-hmi.dts
+@@ -0,0 +1,180 @@
++// SPDX-License-Identifier: GPL-2.0-only or MIT
++/*
++ * Device Tree file for the AM62L3 Evaluation Module with DSI Display
++ * Copyright (C) 2025 Texas Instruments Incorporated - https://www.ti.com/
++ *
++ * Minimal device tree configured for DSI display support with the RPi 7-inch
++ * touchscreen panel. The k3-am62l3-evm-dsi-rpi-7inch-panel.dtso overlay
++ * must be applied to complete the display configuration.
++ *
++ * Technical Reference Manual: https://www.ti.com/lit/pdf/sprujb4
++ * Data Sheet: https://www.ti.com/lit/pdf/sprspa1
++ */
++
++/dts-v1/;
++
++#include <dt-bindings/gpio/gpio.h>
++#include <dt-bindings/interrupt-controller/irq.h>
++#include "k3-am62l3.dtsi"
++#include "k3-pinctrl.h"
++
++/ {
++	compatible = "ti,am62l3-evm", "ti,am62l3";
++	model = "Texas Instruments AM62L3 Evaluation Module with DSI";
++
++	chosen {
++		stdout-path = &uart0;
++	};
++
++	memory@80000000 {
++		reg = <0x00000000 0x80000000 0x00000000 0x80000000>;
++		device_type = "memory";
++		bootph-all;
++	};
++};
++
++/* Pinctrl configuration for basic peripherals */
++&pmx0 {
++	main_uart0_pins_default: main-uart0-default-pins {
++		pinctrl-single,pins = <
++			AM62LX_IOPAD(0x01b4, PIN_INPUT, 0)	/* (D13) UART0_RXD */
++			AM62LX_IOPAD(0x01b8, PIN_OUTPUT, 0)	/* (C13) UART0_TXD */
++		>;
++		bootph-all;
++	};
++
++	i2c0_pins_default: i2c0-default-pins {
++		pinctrl-single,pins = <
++			AM62LX_IOPAD(0x01cc, PIN_INPUT_PULLUP, 0) /* (B7) I2C0_SCL */
++			AM62LX_IOPAD(0x01d0, PIN_INPUT_PULLUP, 0) /* (A7) I2C0_SDA */
++		>;
++	};
++
++	main_mmc1_pins_default: main-mmc1-default-pins {
++		pinctrl-single,pins = <
++			AM62LX_IOPAD(0x0230, PIN_INPUT, 0) /* (Y3) MMC1_CMD */
++			AM62LX_IOPAD(0x0228, PIN_OUTPUT, 0) /* (Y2) MMC1_CLK */
++			AM62LX_IOPAD(0x0224, PIN_INPUT, 0) /* (AA1) MMC1_DAT0 */
++			AM62LX_IOPAD(0x0220, PIN_INPUT, 0) /* (Y4) MMC1_DAT1 */
++			AM62LX_IOPAD(0x021c, PIN_INPUT, 0) /* (AA2) MMC1_DAT2 */
++			AM62LX_IOPAD(0x0218, PIN_INPUT, 0) /* (AB2) MMC1_DAT3 */
++			AM62LX_IOPAD(0x0234, PIN_INPUT, 0) /* (B6) MMC1_SDCD */
++		>;
++		bootph-all;
++	};
++
++        mmc0_pins_default: mmc0-default-pins {
++                pinctrl-single,pins = <
++                        AM62LX_IOPAD(0x0214, PIN_INPUT, 0) /* (D2) MMC0_CMD */
++                        AM62LX_IOPAD(0x020c, PIN_OUTPUT, 0) /* (B2) MMC0_CLK */
++                        AM62LX_IOPAD(0x0208, PIN_INPUT, 0) /* (D3) MMC0_DAT0 */
++                        AM62LX_IOPAD(0x0204, PIN_INPUT_PULLUP, 0) /* (D4) MMC0_DAT1 */
++                        AM62LX_IOPAD(0x0200, PIN_INPUT_PULLUP, 0) /* (C1) MMC0_DAT2 */
++                        AM62LX_IOPAD(0x01fc, PIN_INPUT_PULLUP, 0) /* (C2) MMC0_DAT3 */
++                        AM62LX_IOPAD(0x01f8, PIN_INPUT_PULLUP, 0) /* (C4) MMC0_DAT4 */
++                        AM62LX_IOPAD(0x01f4, PIN_INPUT_PULLUP, 0) /* (B3) MMC0_DAT5 */
++                        AM62LX_IOPAD(0x01f0, PIN_INPUT_PULLUP, 0) /* (A3) MMC0_DAT6 */
++                        AM62LX_IOPAD(0x01ec, PIN_INPUT_PULLUP, 0) /* (B4) MMC0_DAT7 */
++                >;
++                bootph-all;
++        };
++};
++
++/* UART0 */
++&uart0 {
++	pinctrl-names = "default";
++	pinctrl-0 = <&main_uart0_pins_default>;
++	bootph-all;
++	status = "okay";
++};
++
++/* I2C0 - Required for DSI display regulator and touch controller */
++&i2c0 {
++	pinctrl-names = "default";
++	pinctrl-0 = <&i2c0_pins_default>;
++	clock-frequency = <400000>;
++	status = "okay";
++};
++
++&sdhci0 {
++        /* eMMC */
++        pinctrl-names = "default";
++        pinctrl-0 = <&mmc0_pins_default>;
++        non-removable;
++        status = "okay";
++        bootph-all;
++};
++
++/* SD/MMC */
++&sdhci1 {
++	pinctrl-names = "default";
++	pinctrl-0 = <&main_mmc1_pins_default>;
++	disable-wp;
++	bootph-all;
++	status = "okay";
++};
++
++/* Display subsystem - DPI output to DSI bridge */
++&dss {
++	status = "okay";
++	bootph-all;
++};
++
++&dss_ports {
++	#address-cells = <1>;
++	#size-cells = <0>;
++
++	/* VP1: DPI Output to DSI Bridge */
++	port@0 {
++		reg = <0>;
++
++		dpi_out: endpoint {
++			remote-endpoint = <&dsi0_in>;
++		};
++	};
++};
++
++/* DSI Controller - DPI to DSI bridge connection */
++&dsi0 {
++	status = "okay";
++	#address-cells = <1>;
++	#size-cells = <0>;
++
++	ports {
++		#address-cells = <1>;
++		#size-cells = <0>;
++
++		/* DSI output port (to bridge/panel) */
++		port@0 {
++			reg = <0>;
++			dsi0_out: endpoint {
++				/* Will be connected by overlay */
++			};
++		};
++
++		/* DSI input port (from DPI) */
++		port@1 {
++			reg = <1>;
++			dsi0_in: endpoint {
++				remote-endpoint = <&dpi_out>;
++			};
++		};
++	};
++};
++
++/* DSI Physical Layer */
++&dphy_tx0 {
++	status = "okay";
++};
++
++&gpio0 {
++	status = "disabled";
++};
++
++&gpio2 {
++	status = "disabled";
++};
++
++&wkup_rtc0 {
++	status = "disabled";
++};
+-- 
+2.34.1
+
