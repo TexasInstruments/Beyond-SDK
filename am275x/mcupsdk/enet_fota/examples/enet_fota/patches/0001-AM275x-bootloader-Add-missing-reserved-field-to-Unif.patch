@@ -1,0 +1,29 @@
+From 5236b32917655fd76afec8414d84348e1e5c5831 Mon Sep 17 00:00:00 2001
+From: Aryamaan Chaurasia <a-chaurasia@ti.com>
+Date: Wed, 24 Jun 2026 10:36:42 +0530
+Subject: [PATCH 1/4] AM275x: bootloader: Add missing reserved field to
+ Uniflash header structure
+
+- Add missing rsv1 field to Bootloader_UniflashFileHeader_s
+
+Signed-off-by: Aryamaan Chaurasia <a-chaurasia@ti.com>
+---
+ source/drivers/bootloader/bootloader_uniflash.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/source/drivers/bootloader/bootloader_uniflash.h b/source/drivers/bootloader/bootloader_uniflash.h
+index cba66d31..d8382f6f 100644
+--- a/source/drivers/bootloader/bootloader_uniflash.h
++++ b/source/drivers/bootloader/bootloader_uniflash.h
+@@ -83,7 +83,7 @@ typedef struct Bootloader_UniflashFileHeader_s
+ 
+ 	uint32_t flashType;
+     /* Flash type used for flashing. Whether serial/parallel flash */
+-
++	uint32_t rsv1;
+ 	uint32_t rsv2;
+ 	uint32_t rsv3;
+ 	/* Reserved */
+-- 
+2.34.1
+

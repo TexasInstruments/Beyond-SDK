@@ -1,0 +1,41 @@
+From ea76f6c37f4640a7d8ebde14b2242bd1c38ed60a Mon Sep 17 00:00:00 2001
+From: Aryamaan Chaurasia <a-chaurasia@ti.com>
+Date: Wed, 24 Jun 2026 10:39:52 +0530
+Subject: [PATCH 3/4] AM275x: build: Add bootloader source files to R5F
+ makefile
+
+- Add bootloader source files to FILES_common
+- Add bootloader include paths to FILES_PATH_common
+
+Signed-off-by: Aryamaan Chaurasia <a-chaurasia@ti.com>
+---
+ source/drivers/makefile.am275x.r5f.ti-arm-clang | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/source/drivers/makefile.am275x.r5f.ti-arm-clang b/source/drivers/makefile.am275x.r5f.ti-arm-clang
+index d63c21e4..17bdd2fc 100644
+--- a/source/drivers/makefile.am275x.r5f.ti-arm-clang
++++ b/source/drivers/makefile.am275x.r5f.ti-arm-clang
+@@ -16,6 +16,10 @@ ConfigName:=$(PROFILE)
+ LIBNAME:=drivers.am275x.r5f.ti-arm-clang.$(PROFILE).lib
+ 
+ FILES_common := \
++    bootloader.c \
++    bootloader_mcelf.c \
++    bootloader_soc.c \
++    bootloader_uniflash.c \
+     aasrc.c \
+     aasrc_ch.c \
+     aasrc_clocking.c \
+@@ -98,6 +102,8 @@ FILES_common := \
+     watchdog_soc.c \
+ 
+ FILES_PATH_common = \
++    bootloader/soc/am275x \
++    bootloader \
+     adc/v0 \
+     aasrc/v0 \
+     aasrc/v0/soc/am275x \
+-- 
+2.34.1
+

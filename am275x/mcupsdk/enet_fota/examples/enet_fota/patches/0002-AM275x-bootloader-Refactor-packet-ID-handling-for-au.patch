@@ -1,0 +1,103 @@
+From 75ec645b266b2ee82c990167754b6eeea1549ae7 Mon Sep 17 00:00:00 2001
+From: Aryamaan Chaurasia <a-chaurasia@ti.com>
+Date: Wed, 24 Jun 2026 10:38:25 +0530
+Subject: [PATCH 2/4] AM275x: bootloader: Refactor packet ID handling for
+ authentication
+
+- Add BOOTLOADER_MCELF_PACKET_ID and BOOTLOADER_MCELF_FINAL_PACKET_ID defines
+- Change isFinalPkt from bool to uint32_t
+- Update Bootloader_authUpdate() signature to accept uint32_t final_pkt
+
+Signed-off-by: Aryamaan Chaurasia <a-chaurasia@ti.com>
+---
+ source/drivers/bootloader/bootloader_mcelf.c | 18 ++++++++++--------
+ 1 file changed, 10 insertions(+), 8 deletions(-)
+
+diff --git a/source/drivers/bootloader/bootloader_mcelf.c b/source/drivers/bootloader/bootloader_mcelf.c
+index 6dcb2b4e..f3000613 100644
+--- a/source/drivers/bootloader/bootloader_mcelf.c
++++ b/source/drivers/bootloader/bootloader_mcelf.c
+@@ -71,6 +71,8 @@
+                                                (ELF_MAX_SEGMENTS * ELF_P_HEADER_MAX_SIZE) \
+                                                + ELF_NOTE_SEGMENT_MAX_SIZE)
+ 
++#define BOOTLOADER_MCELF_FINAL_PACKET_ID      (0x5AU)
++#define BOOTLOADER_MCELF_PACKET_ID            (0xA5U)
+ /* ========================================================================== */
+ /*                         Structure Declarations                             */
+ /* ========================================================================== */
+@@ -130,7 +132,7 @@ static int32_t Bootloader_parseNoteSegment(Bootloader_Handle handle,
+ 
+ /* Functions to call TISCI APIs for authentication */
+ static int32_t Bootloader_authInit(uint32_t certLoadAddr);
+-static int32_t Bootloader_authUpdate(uint32_t segAddr, uint32_t segSize, bool final_pkt, uint64_t dst);
++static int32_t Bootloader_authUpdate(uint32_t segAddr, uint32_t segSize, uint32_t final_pkt, uint64_t dst);
+ static int32_t Bootloader_authFinish(void);
+ 
+ /* Function to copy DMA restricted regions */
+@@ -201,7 +203,7 @@ int32_t Bootloader_parseAndLoadMultiCoreELF(Bootloader_Handle handle, Bootloader
+             if(status == SystemP_SUCCESS)
+             {
+                 uint32_t i = 1U, cslCoreId = 0U, mcelfCoreId = 0U, imgAddr;
+-                bool isFinalPkt = FALSE;
++                uint8_t isFinalPkt = BOOTLOADER_MCELF_PACKET_ID;
+ 
+                 if(config->bootMedia == BOOTLOADER_MEDIA_FLASH)
+                 {
+@@ -258,7 +260,7 @@ int32_t Bootloader_parseAndLoadMultiCoreELF(Bootloader_Handle handle, Bootloader
+                                     {
+                                         if (i == elfPtr32->ePhnum - 1U)
+                                         {
+-                                            isFinalPkt = TRUE;
++                                            isFinalPkt = BOOTLOADER_MCELF_FINAL_PACKET_ID;
+                                         }
+ 
+                                         if(config->bootMedia == BOOTLOADER_MEDIA_FLASH)
+@@ -363,7 +365,7 @@ int32_t Bootloader_parseAndLoadMultiCoreELF(Bootloader_Handle handle, Bootloader
+                                 {
+                                     if (i == (elfPtr64->ePhnum - 1U))
+                                     {
+-                                        isFinalPkt = TRUE;
++                                        isFinalPkt = BOOTLOADER_MCELF_FINAL_PACKET_ID;
+                                     }
+ 
+                                     if(config->bootMedia == BOOTLOADER_MEDIA_FLASH)
+@@ -969,7 +971,7 @@ static int32_t Bootloader_authInit(uint32_t certLoadAddr)
+     return authStatus;
+ }
+ 
+-static int32_t Bootloader_authUpdate(uint32_t segAddr, uint32_t segSize, bool final_pkt, uint64_t dst)
++static int32_t Bootloader_authUpdate(uint32_t segAddr, uint32_t segSize, uint32_t final_pkt, uint64_t dst)
+ {
+     int32_t status;
+     struct tisci_security_mesg_mcelf_update_req request;
+@@ -1129,7 +1131,7 @@ int32_t Bootloader_UartParseAndLoadMultiCoreELF(Bootloader_Handle handle, Bootlo
+             if(status == SystemP_SUCCESS)
+             {
+                 uint32_t i = 1U, cslCoreId = 0U, mcelfCoreId = 0U;
+-                bool isFinalPkt = FALSE;
++                bool isFinalPkt = BOOTLOADER_MCELF_PACKET_ID;
+ 
+                 if(mcelfMetaInfo.elfClass == ELFCLASS_32)
+                 {
+@@ -1175,7 +1177,7 @@ int32_t Bootloader_UartParseAndLoadMultiCoreELF(Bootloader_Handle handle, Bootlo
+                                 {
+                                     if (i == (mcelfMetaInfo.elfPtr32->ePhnum - 1U))
+                                     {
+-                                        isFinalPkt = TRUE;
++                                        isFinalPkt = BOOTLOADER_MCELF_FINAL_PACKET_ID;
+                                     }
+ 
+                                     Bootloader_UartArgs *uartArgs = (Bootloader_UartArgs *)(config->args);
+@@ -1257,7 +1259,7 @@ int32_t Bootloader_UartParseAndLoadMultiCoreELF(Bootloader_Handle handle, Bootlo
+                             {
+                                 if (i == (mcelfMetaInfo.elfPtr64->ePhnum - 1U))
+                                 {
+-                                    isFinalPkt = TRUE;
++                                    isFinalPkt = BOOTLOADER_MCELF_FINAL_PACKET_ID;
+                                 }
+                                 if(cslCoreId == CSL_CORE_ID_WKUP_R5FSS0_0)
+                                 {
+-- 
+2.34.1
+
