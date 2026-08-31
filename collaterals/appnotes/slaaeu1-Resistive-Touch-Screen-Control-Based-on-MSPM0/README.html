@@ -34,36 +34,33 @@
 </header>
 <div id="content">
   <h1>Readme</h1>
-<h2 id="example-summary">Example Summary</h2>
-<p>Empty project using DriverLib. This example shows a basic empty project using DriverLib with just main file and SysConfig initialization.</p>
-<h2 id="peripherals-pin-assignments">Peripherals &amp; Pin Assignments</h2>
-<table>
-<thead>
-<tr class="header">
-<th>Peripheral</th>
-<th>Pin</th>
-<th>Function</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>SYSCTL</td>
-<td></td>
-<td></td>
-</tr>
-<tr class="even">
-<td>DEBUGSS</td>
-<td>PA20</td>
-<td>Debug Clock</td>
-</tr>
-<tr class="odd">
-<td>DEBUGSS</td>
-<td>PA19</td>
-<td>Debug Data In Out</td>
-</tr>
-</tbody>
-</table>
-<h2 id="boosterpacks-board-resources-jumper-settings">BoosterPacks, Board Resources &amp; Jumper Settings</h2>
+<h2 id="example-summary">Resistive Touch Screen</h2>
+<p>This example demonstrates 4-wire resistive touch screen control using the MSPM0L1306 microcontroller.</p>
+<h3 id="available-examples">Available Examples</h3>
+<ol>
+<li><strong>resistive_touch_detection</strong>: Detects touch events and measures X and Y coordinates once per touch.</li>
+</ol>
+<h3 id="hardware-requirements">Hardware Requirements</h3>
+<p>These examples use a resistive panel with:</p>
+<ul>
+<li>X-axis: 780 Ohm resistance</li>
+<li>Y-axis: 250 Ohm resistance</li>
+</ul>
+<p>For different panels, calculate current using V=IR:</p>
+<ol>
+<li>Find resistance across each axis on your panel</li>
+<li>Calculate current: I = V/R (assume 3.3V supply)</li>
+<li>Each MSPM0L1306 pin supports maximum 6 mA</li>
+</ol>
+<p><strong>Pin Count</strong>: For Y-axis with 250Ω, 3 GPIO pins are required to avoid exceeding 6 mA per pin.</p>
+<h3 id="critical-design-note">Critical Design Note</h3>
+<p>Each axis must have <strong>at least 1 ADC pin</strong> (positive or negative):</p>
+<ul>
+<li>Required to read ADC values</li>
+<li>Used to detect touch presence</li>
+<li>Used to measure touch coordinates</li>
+</ul>
+<h2 id="pin-configurations">Pin Configurations</h2>
 <p>Visit <a href="https://www.ti.com/tool/LP-MSPM0L1306">LP_MSPM0L1306</a> for LaunchPad information, including user guide and hardware files.</p>
 <table>
 <thead>
@@ -71,36 +68,176 @@
 <th>Pin</th>
 <th>Peripheral</th>
 <th>Function</th>
-<th>LaunchPad Pin</th>
 <th>LaunchPad Settings</th>
 </tr>
 </thead>
 <tbody>
 <tr class="odd">
-<td>PA20</td>
-<td>DEBUGSS</td>
-<td>SWCLK</td>
-<td>J2_13</td>
-<td><ul><li>PA20 is used by SWD during debugging<br><ul><li><code>J101 15:16 ON</code> Connect to XDS-110 SWCLK while debugging<br><li><code>J101 15:16 OFF</code> Disconnect from XDS-110 SWCLK if using pin in application</ul></ul></td>
+<td>PA17</td>
+<td>ADC12_0</td>
+<td>X+</td>
+<td>Connect to touch screen X+</td>
 </tr>
 <tr class="even">
-<td>PA19</td>
-<td>DEBUGSS</td>
-<td>SWDIO</td>
-<td>J2_17</td>
-<td><ul><li>PA19 is used by SWD during debugging<br><ul><li><code>J101 13:14 ON</code> Connect to XDS-110 SWDIO while debugging<br><li><code>J101 13:14 OFF</code> Disconnect from XDS-110 SWDIO if using pin in application</ul></ul></td>
+<td>PA15</td>
+<td>ADC12_0</td>
+<td>X-</td>
+<td>Connect to touch screen X- (ADC Channel 9)</td>
+</tr>
+<tr class="odd">
+<td>PA16</td>
+<td>ADC12_0</td>
+<td>Y+</td>
+<td>Connect to touch screen Y+ (ADC Channel 8)</td>
+</tr>
+<tr class="even">
+<td>PA24, PA0</td>
+<td>GPIO</td>
+<td>Y+ additional</td>
+<td>Additional Y+ connections</td>
+</tr>
+<tr class="odd">
+<td>PA25, PA21, P22</td>
+<td>GPIO</td>
+<td>Y- multiple</td>
+<td>Multiple Y- connections</td>
+</tr>
+<tr class="even">
+<td>PA8</td>
+<td>UART0</td>
+<td>TX</td>
+<td>UART TX (9600 baud)</td>
+</tr>
+<tr class="odd">
+<td>PA9</td>
+<td>UART0</td>
+<td>RX</td>
+<td>UART RX (9600 baud)</td>
 </tr>
 </tbody>
 </table>
 <h3 id="device-migration-recommendations">Device Migration Recommendations</h3>
-<p>This project was developed for a superset device included in the LP_MSPM0L1306 LaunchPad. Please visit the <a href="https://software-dl.ti.com/msp430/esd/MSPM0-SDK/latest/docs/english/tools/ccs_ide_guide/doc_guide/doc_guide-srcs/ccs_ide_guide.html#sysconfig-project-migration">CCS User’s Guide</a> for information about migrating to other MSPM0 devices.</p>
+<p>This project was developed for a superset device included in the LP_MSPM0L1306 LaunchPad. Please
+visit the <a href="https://software-dl.ti.com/msp430/esd/MSPM0-SDK/latest/docs/english/tools/ccs_ide_guide/doc_guide/doc_guide-srcs/ccs_ide_guide.html#sysconfig-project-migration">CCS User's Guide</a>
+for information about migrating to other MSPM0 devices.</p>
 <h3 id="low-power-recommendations">Low-Power Recommendations</h3>
-<p>TI recommends to terminate unused pins by setting the corresponding functions to GPIO and configure the pins to output low or input with internal pullup/pulldown resistor.</p>
+<p>TI recommends to terminate unused pins by setting the corresponding functions to
+GPIO and configure the pins to output low or input with internal
+pullup/pulldown resistor.</p>
 <p>SysConfig allows developers to easily configure unused pins by selecting <strong>Board</strong>→<strong>Configure Unused Pins</strong>.</p>
-<p>For more information about jumper configuration to achieve low-power using the MSPM0 LaunchPad, please visit the <a href="https://www.ti.com/lit/slau869">LP-MSPM0L1306 User’s Guide</a>.</p>
+<p>For more information about jumper configuration to achieve low-power using the
+MSPM0 LaunchPad, please visit the <a href="https://www.ti.com/lit/slau869">LP-MSPM0L1306 User’s Guide</a>.</p>
 <h2 id="example-usage">Example Usage</h2>
-<p>Compile, load and run the example.</p>
-<!-- Close div from before_body_template.html -->
+<p>Compile, load and run the example. Open a UART terminal at 9600 baud to view touch data.</p>
+<h3 id="uart-output-format">UART Output Format</h3>
+<p>At startup:</p>
+<ul>
+<li>Prints "DEBUG: Touch detection started"</li>
+</ul>
+<p>When touch is detected:</p>
+<ul>
+<li>Initial message: "TOUCH DETECTED!"</li>
+<li>For simple touch detection example: "TOUCH DETECTED! X=XXXX  Y=YYYY"</li>
+</ul>
+<h3 id="how-it-works">How It Works</h3>
+<ol>
+<li><strong>Touch Detection</strong>: Voltage applied across Y+ and Y- pins. ADC measures voltage at X+ pin. Touch detected when ADC value exceeds 4000.</li>
+<li><strong>Coordinate Measurement</strong>:
+<ul>
+<li>X-coordinate: Voltage applied to X+ and X- pins. ADC reads from Y+ pin (channel 8).</li>
+<li>Y-coordinate: Voltage applied to Y+ and Y- pins. ADC reads from X+ pin (channel 9).</li>
+</ul>
+</li>
+<li><strong>Touch Classification for Simple Touch Detection example</strong>:
+<ul>
+<li>No touch classification. Only detects and measures touch coordinates once.</li>
+<li>Outputs coordinates when touch is detected.</li>
+</ul>
+</li>
+</ol>
+<h3 id="timer-wraparound-limitation-clickdrag-detection">Timer Wraparound Limitation (Click/Drag Detection)</h3>
+<p><strong>Important:</strong> Timer G uses a 32-bit downcounter with LFCLK (32,768 Hz) and prescaler 255.</p>
+<ul>
+<li><strong>Timer Frequency:</strong> 32,768 ÷ 255 ≈ 128.5 Hz</li>
+<li><strong>Practical Limit:</strong> Recommended for touch durations ~100 seconds</li>
+</ul>
+<p><strong>For typical use cases</strong> (click/drag interactions, which rarely exceed a few seconds), this is not a limitation. If extended holds (&gt;60 seconds) are required, consider resetting the timer periodically or using a different timing mechanism.</p>
+<h3 id="configuration-parameters">Configuration Parameters</h3>
+<table>
+<thead>
+<tr class="header">
+<th>Parameter</th>
+<th>Value</th>
+<th>Location</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>X_MIN</td>
+<td>200</td>
+<td>main.c:39</td>
+<td>Minimum X-coordinate for valid touch (calibration dependent)</td>
+</tr>
+<tr class="even">
+<td>X_MAX</td>
+<td>4090</td>
+<td>main.c:40</td>
+<td>Maximum X-coordinate for valid touch (calibration dependent)</td>
+</tr>
+<tr class="odd">
+<td>Y_MIN</td>
+<td>200</td>
+<td>main.c:41</td>
+<td>Minimum Y-coordinate for valid touch (calibration dependent)</td>
+</tr>
+<tr class="even">
+<td>Y_MAX</td>
+<td>3800</td>
+<td>main.c:42</td>
+<td>Maximum Y-coordinate for valid touch (calibration dependent)</td>
+</tr>
+<tr class="even">
+<td>INACTIVE_SAMPLE_DELAY</td>
+<td>200</td>
+<td>main.c:47</td>
+<td>Sampling rate in ms when no touch detected</td>
+</tr>
+<tr class="even">
+<td>SETTLE_DELAY</td>
+<td>3.125</td>
+<td>main.c:51</td>
+<td>Voltage settling time in ms after pin configuration</td>
+</tr>
+<tr class="odd">
+<td>TOUCH_DETECTION_THD</td>
+<td>4000</td>
+<td>resistive_detection.h:40</td>
+<td>ADC threshold for touch detection (12-bit resolution)</td>
+</tr>
+<tr class="even">
+<td>X_ADC_CHANNEL</td>
+<td>9</td>
+<td>resistive_detection.h:36</td>
+<td>ADC channel for X+ pin (used for Y-coordinate reading)</td>
+</tr>
+<tr class="odd">
+<td>Y_ADC_CHANNEL</td>
+<td>8</td>
+<td>resistive_detection.h:37</td>
+<td>ADC channel for Y+ pin (used for X-coordinate reading)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="hardware-connections">Hardware Connections</h3>
+<p>Connect the 4-wire resistive touch screen to:</p>
+<ul>
+<li>X+ → PA17</li>
+<li>X- → PA15 (ADC channel 9)</li>
+<li>Y+ → PA16 (ADC channel 8) with additional connections to PA24 and PA0</li>
+<li>Y- → PA21, PA22 and PA25</li>
+</ul>
+</div>
 </div>
 <footer id="tiFooter">
   <p>TI is a global semiconductor design and manufacturing company. Innovate

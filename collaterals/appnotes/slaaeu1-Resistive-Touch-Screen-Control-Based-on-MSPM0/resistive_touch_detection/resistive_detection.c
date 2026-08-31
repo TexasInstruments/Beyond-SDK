@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, Texas Instruments Incorporated
+ * Copyright (c) 2026, Texas Instruments Incorporated
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -31,11 +31,19 @@
  */
 
 #include "resistive_detection.h"
+#include "UART.h"
+#include <stdio.h>
 
 
-uint8_t readTouchX(void)
+uint16_t readTouchX(void)
 {
     touchIOReset();
+
+    /**
+     * enabling output for pins 15 and 17
+     * setting pin 15 to low and pin 17 to high
+     * reading ADC value from pin 16 - i.e from the pin connected to the Y axis of the touch screen
+     */
 
     DL_GPIO_initDigitalOutput(GPIO_GRP_0_XP_IOMUX);
     DL_GPIO_initDigitalOutput(GPIO_GRP_0_XN_IOMUX);
@@ -43,47 +51,66 @@ uint8_t readTouchX(void)
     DL_GPIO_clearPins(GPIO_GRP_0_PORT, GPIO_GRP_0_XN_PIN);
     DL_GPIO_enableOutput(GPIO_GRP_0_PORT, GPIO_GRP_0_XP_PIN |GPIO_GRP_0_XN_PIN);
 
-    delay_cycles(10000);//Wait voltage to be steady
-    return ADC_sample(Y_ADC_CHANNEL);
+    /* Wait voltage to be steady. 32k - CPU cycles per ms */
+    delay_cycles(SETTLE_DELAY*32000);
+    uint16_t xValue = ADC_sample(Y_ADC_CHANNEL);
+    return xValue;
 }
 
-uint8_t readTouchY(void)
+uint16_t readTouchY(void)
 {
     touchIOReset();
+
+    /**
+     * we need to enable similarly for the Y-axis pins and read the ADC from the X-axis pin
+     * This is because the touch screen works by applying voltage across one axis and
+     * reading the voltage drop across the other axis to determine the touch coordinates.
+     */
 
     DL_GPIO_initDigitalOutput(GPIO_GRP_0_YP_IOMUX);
     DL_GPIO_initDigitalOutput(GPIO_GRP_0_YN_IOMUX);
     DL_GPIO_initDigitalOutput(GPIO_GRP_0_YP2_IOMUX);
     DL_GPIO_initDigitalOutput(GPIO_GRP_0_YN2_IOMUX);
-    DL_GPIO_setPins(GPIO_GRP_0_PORT,  GPIO_GRP_0_YP_PIN |GPIO_GRP_0_YP2_PIN);
-    DL_GPIO_clearPins(GPIO_GRP_0_PORT, GPIO_GRP_0_YN_PIN | GPIO_GRP_0_YN2_PIN);
-    DL_GPIO_enableOutput(GPIO_GRP_0_PORT, GPIO_GRP_0_YP_PIN |GPIO_GRP_0_YN_PIN | GPIO_GRP_0_YP2_PIN |GPIO_GRP_0_YN2_PIN);
+    DL_GPIO_initDigitalOutput(GPIO_GRP_0_YP3_IOMUX);
+    DL_GPIO_initDigitalOutput(GPIO_GRP_0_YN3_IOMUX);
 
-    delay_cycles(10000);//Wait voltage to be steady
-    return ADC_sample(X_ADC_CHANNEL);
+    DL_GPIO_setPins(GPIO_GRP_0_PORT,  GPIO_GRP_0_YP_PIN | GPIO_GRP_0_YP2_PIN | GPIO_GRP_0_YP3_PIN);
+    DL_GPIO_clearPins(GPIO_GRP_0_PORT, GPIO_GRP_0_YN_PIN | GPIO_GRP_0_YN2_PIN | GPIO_GRP_0_YN3_PIN);
+    DL_GPIO_enableOutput(GPIO_GRP_0_PORT, GPIO_GRP_0_YP_PIN |GPIO_GRP_0_YN_PIN | GPIO_GRP_0_YP2_PIN 
+                            |GPIO_GRP_0_YN2_PIN | GPIO_GRP_0_YP3_PIN |GPIO_GRP_0_YN3_PIN);
+
+    /* Wait voltage to be steady. 32k - CPU cycles per ms */
+    delay_cycles(SETTLE_DELAY*32000);
+    uint16_t yValue = ADC_sample(X_ADC_CHANNEL);
+    return yValue;
 }
 
 bool touchIODetection(void)
 {
-    uint8_t adcValue;
-//    touchIOReset();
+    uint16_t adcValue;
+
     DL_GPIO_initPeripheralAnalogFunction(GPIO_GRP_0_XN_IOMUX);
     DL_GPIO_initPeripheralAnalogFunction(GPIO_GRP_0_XP_IOMUX);
-    //Set Yp and Yn to high
+    /* Set Yp and Yn to high */
     DL_GPIO_initDigitalOutput(GPIO_GRP_0_YP_IOMUX);
     DL_GPIO_initDigitalOutput(GPIO_GRP_0_YN_IOMUX);
     DL_GPIO_initDigitalOutput(GPIO_GRP_0_YP2_IOMUX);
     DL_GPIO_initDigitalOutput(GPIO_GRP_0_YN2_IOMUX);
-    DL_GPIO_setPins(GPIO_GRP_0_PORT,  GPIO_GRP_0_YP_PIN | GPIO_GRP_0_YP2_PIN| GPIO_GRP_0_YN_PIN | GPIO_GRP_0_YN2_PIN);
-    DL_GPIO_enableOutput(GPIO_GRP_0_PORT,  GPIO_GRP_0_YP_PIN | GPIO_GRP_0_YP2_PIN| GPIO_GRP_0_YN_PIN | GPIO_GRP_0_YN2_PIN);
+    DL_GPIO_initDigitalOutput(GPIO_GRP_0_YP3_IOMUX);
+    DL_GPIO_initDigitalOutput(GPIO_GRP_0_YN3_IOMUX);
+    DL_GPIO_setPins(GPIO_GRP_0_PORT,  GPIO_GRP_0_YP_PIN | GPIO_GRP_0_YP2_PIN | GPIO_GRP_0_YP3_PIN 
+                        | GPIO_GRP_0_YN_PIN | GPIO_GRP_0_YN2_PIN | GPIO_GRP_0_YN3_PIN);
+    DL_GPIO_enableOutput(GPIO_GRP_0_PORT,  GPIO_GRP_0_YP_PIN | GPIO_GRP_0_YP2_PIN | GPIO_GRP_0_YP3_PIN 
+                        | GPIO_GRP_0_YN_PIN | GPIO_GRP_0_YN2_PIN | GPIO_GRP_0_YN3_PIN);
 
-    delay_cycles(10000);//Wait voltage to be steady
+    /* Wait voltage to be steady. 32k - CPU cycles per ms */
+    delay_cycles(SETTLE_DELAY*32000);
     adcValue= ADC_sample(X_ADC_CHANNEL);
 
 
     if (adcValue>TOUCH_DETECTION_THD)
     {
-      return true;
+        return true;
     }
     else
     {
@@ -100,16 +127,19 @@ void touchIOReset(void)
     DL_GPIO_initPeripheralAnalogFunction(GPIO_GRP_0_YN_IOMUX);
     DL_GPIO_initPeripheralAnalogFunction(GPIO_GRP_0_YP2_IOMUX);
     DL_GPIO_initPeripheralAnalogFunction(GPIO_GRP_0_YN2_IOMUX);
+    DL_GPIO_initPeripheralAnalogFunction(GPIO_GRP_0_YP3_IOMUX);
+    DL_GPIO_initPeripheralAnalogFunction(GPIO_GRP_0_YN3_IOMUX);
 }
 
 volatile bool gCheckADC;
-uint8_t ADC_sample(uint32_t adc_channel)
+uint16_t ADC_sample(uint32_t adc_channel)
 {
     gCheckADC = false;
     DL_ADC12_disableConversions(ADC12_0_INST);
     DL_ADC12_configConversionMem(ADC12_0_INST, ADC12_0_ADCMEM_0,
-        adc_channel, DL_ADC12_REFERENCE_VOLTAGE_VDDA, DL_ADC12_SAMPLE_TIMER_SOURCE_SCOMP0, DL_ADC12_AVERAGING_MODE_ENABLED,
-         DL_ADC12_BURN_OUT_SOURCE_DISABLED, DL_ADC12_TRIGGER_MODE_AUTO_NEXT, DL_ADC12_WINDOWS_COMP_MODE_DISABLED);
+        adc_channel, DL_ADC12_REFERENCE_VOLTAGE_VDDA, DL_ADC12_SAMPLE_TIMER_SOURCE_SCOMP0, 
+                        DL_ADC12_AVERAGING_MODE_ENABLED, DL_ADC12_BURN_OUT_SOURCE_DISABLED, 
+                        DL_ADC12_TRIGGER_MODE_AUTO_NEXT, DL_ADC12_WINDOWS_COMP_MODE_DISABLED);
 
     DL_ADC12_enableConversions(ADC12_0_INST);
     DL_ADC12_startConversion(ADC12_0_INST);

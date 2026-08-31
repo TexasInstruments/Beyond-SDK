@@ -17,5 +17,5 @@
 	<sourceLookupPath value="${COM_TI_MSPM0_SDK_INSTALL_DIR}/source/ti/driverlib"/>
 	<filesToOpen value="empty.syscfg,README.md"/>
 	<isTargetManual value="false"/>
-	<origin value="C:/Users/a0224173/Desktop/NPD/1. Finished tasks/20250403-resistance pannel with MSPM0/resistive_touch_screen_MSPM0L1306"/>
+	<origin value="C:/Users/a0224173/Desktop/NPD/1. Finished tasks/20250403-resistance pannel with MSPM0/resistive_touch_detection"/>
 </projectOptions>

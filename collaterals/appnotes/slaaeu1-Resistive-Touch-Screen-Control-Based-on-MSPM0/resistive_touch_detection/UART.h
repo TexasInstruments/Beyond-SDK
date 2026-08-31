@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, Texas Instruments Incorporated
+ * Copyright (c) 2026, Texas Instruments Incorporated
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -36,10 +36,10 @@
 #include "ti_msp_dl_config.h"
 
 
-#define FLOAT_DATA_LEN       (3)
+#define FLOAT_DATA_LEN       (4)
 
 void uartSend(double num);
 void uartSendString(char * buf, uint8_t Length);
-void uartDataUpdate(uint8_t u8x, uint8_t u8y);
+void uartDataUpdate(uint16_t u8x, uint16_t u8y);
 
 #endif /* UART_H_ */

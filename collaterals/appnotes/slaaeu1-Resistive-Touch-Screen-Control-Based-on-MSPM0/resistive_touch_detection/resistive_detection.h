@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, Texas Instruments Incorporated
+ * Copyright (c) 2026, Texas Instruments Incorporated
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -36,14 +36,21 @@
 #define X_ADC_CHANNEL      DL_ADC12_INPUT_CHAN_9
 #define Y_ADC_CHANNEL      DL_ADC12_INPUT_CHAN_8
 
-#define TOUCH_DETECTION_THD     250
+/* scaling below macro from 8-bit to 12-bit resolution by: 250*16 */
+#define TOUCH_DETECTION_THD     4000
+ /**
+ * delay for voltage to be steady after setting pins in ms - calculated based on RC 
+ * time constant of the touch screen circuit (can be adjusted based on empirical 
+ * testing for better performance) 
+ */
+#define SETTLE_DELAY 3.125
 
 #include "ti_msp_dl_config.h"
 
-uint8_t readTouchX(void);
-uint8_t readTouchY(void);
+uint16_t readTouchX(void);
+uint16_t readTouchY(void);
 bool touchIODetection(void);
 void touchIOReset(void);
-uint8_t ADC_sample(uint32_t adc_channel);
+uint16_t ADC_sample(uint32_t adc_channel);
 
 #endif /* RESISTIVE_DETECTION_H_ */
