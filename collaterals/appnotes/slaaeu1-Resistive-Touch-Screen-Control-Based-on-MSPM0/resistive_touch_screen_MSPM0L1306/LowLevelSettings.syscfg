@@ -1,0 +1,89 @@
+/**
+ * These arguments were used when this file was generated. They will be automatically applied on subsequent loads
+ * via the GUI or CLI. Run CLI with '--help' for additional information on how to override these arguments.
+ * @cliArgs --device "MSPM0L130X" --part "Default" --package "VQFN-32(RHB)" --product "mspm0_sdk@2.06.00.05"
+ * @v2CliArgs --device "MSPM0L1306" --package "VQFN-32(RHB)" --product "mspm0_sdk@2.06.00.05"
+ * @versions {"tool":"1.23.0+4000"}
+ */
+
+/**
+ * Import the modules used in this configuration.
+ */
+const ADC12  = scripting.addModule("/ti/driverlib/ADC12", {}, false);
+const ADC121 = ADC12.addInstance();
+const GPIO   = scripting.addModule("/ti/driverlib/GPIO", {}, false);
+const GPIO1  = GPIO.addInstance();
+const SYSCTL = scripting.addModule("/ti/driverlib/SYSCTL");
+const UART   = scripting.addModule("/ti/driverlib/UART", {}, false);
+const UART1  = UART.addInstance();
+
+/**
+ * Write custom configuration values to the imported modules.
+ */
+ADC121.$name                                    = "ADC12_0";
+ADC121.adcMem0chansel                           = "DL_ADC12_INPUT_CHAN_8";
+ADC121.adcMem1chansel                           = "DL_ADC12_INPUT_CHAN_9";
+ADC121.resolution                               = "DL_ADC12_SAMP_CONV_RES_8_BIT";
+ADC121.adcMem0avgen                             = true;
+ADC121.hwDenominator                            = "DL_ADC12_HW_AVG_DEN_DIV_BY_16";
+ADC121.hwNumerator                              = "DL_ADC12_HW_AVG_NUM_ACC_16";
+ADC121.enabledInterrupts                        = ["DL_ADC12_INTERRUPT_MEM0_RESULT_LOADED"];
+ADC121.sampleTime0                              = "0.1 ms";
+ADC121.peripheral.adcPin8.$assignAllowConflicts = "PA16";
+ADC121.adcPin8Config.$name                      = "ti_driverlib_gpio_GPIOPinGeneric0";
+
+const Board = scripting.addModule("/ti/driverlib/Board", {}, false);
+
+GPIO1.$name                                       = "GPIO_GRP_0";
+GPIO1.associatedPins.create(8);
+GPIO1.associatedPins[0].assignedPin               = "15";
+GPIO1.associatedPins[0].assignedPort              = "PORTA";
+GPIO1.associatedPins[0].$name                     = "XN";
+GPIO1.associatedPins[1].assignedPort              = "PORTA";
+GPIO1.associatedPins[1].assignedPin               = "17";
+GPIO1.associatedPins[1].$name                     = "XP";
+GPIO1.associatedPins[2].assignedPort              = "PORTA";
+GPIO1.associatedPins[2].assignedPin               = "16";
+GPIO1.associatedPins[2].$name                     = "YN";
+GPIO1.associatedPins[2].pin.$assignAllowConflicts = "PA16";
+GPIO1.associatedPins[3].assignedPort              = "PORTA";
+GPIO1.associatedPins[3].assignedPin               = "25";
+GPIO1.associatedPins[3].$name                     = "YP";
+GPIO1.associatedPins[4].assignedPort              = "PORTA";
+GPIO1.associatedPins[4].assignedPin               = "21";
+GPIO1.associatedPins[4].$name                     = "YP2";
+GPIO1.associatedPins[5].assignedPort              = "PORTA";
+GPIO1.associatedPins[5].assignedPin               = "24";
+GPIO1.associatedPins[5].$name                     = "YN2";
+GPIO1.associatedPins[6].$name                     = "YN3";
+GPIO1.associatedPins[6].assignedPort              = "PORTA";
+GPIO1.associatedPins[6].assignedPin               = "22";
+GPIO1.associatedPins[7].$name                     = "YP3";
+GPIO1.associatedPins[7].assignedPort              = "PORTA";
+GPIO1.associatedPins[7].assignedPin               = "1";
+
+
+UART1.$name                    = "UART_0";
+UART1.peripheral.rxPin.$assign = "PA9";
+UART1.peripheral.txPin.$assign = "PA8";
+UART1.txPinConfig.$name        = "ti_driverlib_gpio_GPIOPinGeneric2";
+UART1.rxPinConfig.$name        = "ti_driverlib_gpio_GPIOPinGeneric3";
+
+/**
+ * Pinmux solution for unlocked pins/peripherals. This ensures that minor changes to the automatic solver in a future
+ * version of the tool will not impact the pinmux you originally saw.  These lines can be completely deleted in order to
+ * re-solve from scratch.
+ */
+ADC121.peripheral.$suggestSolution           = "ADC0";
+Board.peripheral.$suggestSolution            = "DEBUGSS";
+Board.peripheral.swclkPin.$suggestSolution   = "PA20";
+Board.peripheral.swdioPin.$suggestSolution   = "PA19";
+GPIO1.associatedPins[0].pin.$suggestSolution = "PA15";
+GPIO1.associatedPins[1].pin.$suggestSolution = "PA17/OPA1.IN0-";
+GPIO1.associatedPins[3].pin.$suggestSolution = "PA25";
+GPIO1.associatedPins[4].pin.$suggestSolution = "PA21";
+GPIO1.associatedPins[5].pin.$suggestSolution = "PA24/OPA0.IN0-";
+GPIO1.associatedPins[6].pin.$suggestSolution = "PA22";
+GPIO1.associatedPins[7].pin.$suggestSolution = "PA1";
+SYSCTL.peripheral.$suggestSolution           = "SYSCTL";
+UART1.peripheral.$suggestSolution            = "UART0";
