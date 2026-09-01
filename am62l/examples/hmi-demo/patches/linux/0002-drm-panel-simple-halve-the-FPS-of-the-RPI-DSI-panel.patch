@@ -1,0 +1,29 @@
+From cb129860187ab2d2e24b505f4fb41d565c4fe49d Mon Sep 17 00:00:00 2001
+From: Kendall Willis <k-willis@ti.com>
+Date: Fri, 12 Jun 2026 12:53:10 -0500
+Subject: [PATCH 2/2] drm/panel: simple: halve the FPS of the RPI DSI panel
+
+Halve the FPS from 60 Hz to 30 Hz of the raspberry PI 7inch DSI panel.
+This saves power for an HMI system.
+
+Signed-off-by: Kendall Willis <k-willis@ti.com>
+---
+ drivers/gpu/drm/panel/panel-simple.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/gpu/drm/panel/panel-simple.c b/drivers/gpu/drm/panel/panel-simple.c
+index 49a6f2180802..8e0b6cbc5e34 100644
+--- a/drivers/gpu/drm/panel/panel-simple.c
++++ b/drivers/gpu/drm/panel/panel-simple.c
+@@ -4102,7 +4102,7 @@ static const struct panel_desc rocktech_rk043fn48h = {
+ };
+ 
+ static const struct drm_display_mode raspberrypi_7inch_mode = {
+-	.clock = 28569600 / 1000,
++	.clock = 28569600 / 2000,
+ 	.hdisplay = 800,
+ 	.hsync_start = 800 + 48,
+ 	.hsync_end = 800 + 48 + 32,
+-- 
+2.34.1
+

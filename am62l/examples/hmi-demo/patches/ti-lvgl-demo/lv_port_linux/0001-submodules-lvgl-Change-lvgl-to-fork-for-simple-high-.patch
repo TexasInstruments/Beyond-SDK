@@ -1,0 +1,39 @@
+From 8b275e6750d9e736aab2227e08e0cafb2fd2c13b Mon Sep 17 00:00:00 2001
+From: Kendall Willis <k-willis@ti.com>
+Date: Mon, 1 Dec 2025 17:12:52 -0600
+Subject: [PATCH 1/2] submodules: lvgl: Change lvgl to fork for simple high res
+ demo
+
+Change the lvgl submodule to point to fork of lvgl that adds in the
+simple high res demo.
+
+Signed-off-by: Kendall Willis <k-willis@ti.com>
+---
+ .gitmodules | 3 ++-
+ lvgl        | 2 +-
+ 2 files changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/.gitmodules b/.gitmodules
+index c8b7f45..70af230 100644
+--- a/.gitmodules
++++ b/.gitmodules
+@@ -6,7 +6,8 @@
+ 	url = https://github.com/littlevgl/lv_drivers.git
+ [submodule "lvgl"]
+ 	path = lvgl
+-	url = https://github.com/TexasInstruments/lvgl.git
++	url = https://github.com/kwillis01/ti-lvgl.git
++	branch = hmi-simple-demo
+ [submodule "lv_demos"]
+ 	path = lv_demos
+ 	url = https://github.com/lvgl/lv_demos
+diff --git a/lvgl b/lvgl
+index a577545..ede0a17 160000
+--- a/lvgl
++++ b/lvgl
+@@ -1 +1 @@
+-Subproject commit a5775450ae1e7fde9ca736f9b1edb2cf1e19bda9
++Subproject commit ede0a179dfeb7a07ae90c87093eb26e36a087e10
+-- 
+2.34.1
+

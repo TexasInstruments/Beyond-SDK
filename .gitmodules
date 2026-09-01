@@ -1,0 +1,21 @@
+[submodule "am62l/examples/hmi-demo/arm-trusted-firmware"]
+	path = am62l/examples/hmi-demo/arm-trusted-firmware
+	url = https://github.com/kwillis01/arm-trusted-firmware.git
+	branch = am62l-hmi-demo
+[submodule "am62l/examples/hmi-demo/linux"]
+	path = am62l/examples/hmi-demo/linux
+	url = https://github.com/kwillis01/linux.git
+	branch = am62l-hmi-demo
+[submodule "am62l/examples/hmi-demo/ti-lvgl-demo"]
+	path = am62l/examples/hmi-demo/ti-lvgl-demo
+	url = https://github.com/kwillis01/ti-lvgl-demo.git
+	branch = hmi-simple-demo
+[submodule "am62l/examples/hmi-demo/ti-u-boot"]
+	path = am62l/examples/hmi-demo/ti-u-boot
+	url = https://git.ti.com/git/ti-u-boot/ti-u-boot.git
+[submodule "am62l/examples/hmi-demo/ti-linux-firmware"]
+	path = am62l/examples/hmi-demo/ti-linux-firmware
+	url = https://git.ti.com/git/processor-firmware/ti-linux-firmware.git
+[submodule "am62l/examples/hmi-demo/optee_os"]
+	path = am62l/examples/hmi-demo/optee_os
+	url = https://github.com/OP-TEE/optee_os.git

@@ -20,3 +20,28 @@ It is noted that the examples can not work on their own. They need to be integra
 
 After the above steps, the integrated example is just like any other example in the SDK. So, the integrated example can be imported in CCS or built on the command line itself following the same process as followed for any other example.
 
+=======
+## Introduction
+This is a repository containing various examples outside of the examples provided in the MCU+ SDK.
+
+# Coding Guidelines
+- Use 4 spaces instead of tabs for the indentation.
+
+# Contributing Guidelines
+Please refer to the [Link to the CONTRIBUTING.MD document]
+
+## List of Maintainers
+- Prashant Shivhare
+=======
+```
+ ______                                          __         ______   ______   ___  ____   
+|_   _ \                                        |  ]      .' ____ \ |_   _ `.|_  ||_  _|  
+  | |_) |  .---.   _   __   .--.   _ .--.   .--.| | ______| (___ \_|  | | `. \ | |_/ /    
+  |  __'. / /__\\ [ \ [  ]/ .'`\ \[ `.-. |/ /'`\' ||______|_.____`.   | |  | | |  __'.    
+ _| |__) || \__.,  \ '/ / | \__. | | | | || \__/  |       | \____) | _| |_.' /_| |  \ \_  
+|_______/  '.__.'[\_:  /   '.__.' [___||__]'.__.;__]       \______.'|______.'|____||____| 
+                  \__.'                                                                   
+```
+
+*Welcome to `Beyond-SDK`... Your one-stop solution for different examples outside of the MCU+ SDK examples...*
+

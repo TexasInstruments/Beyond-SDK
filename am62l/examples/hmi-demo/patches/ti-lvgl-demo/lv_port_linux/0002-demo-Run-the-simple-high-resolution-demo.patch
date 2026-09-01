@@ -1,0 +1,43 @@
+From 9462ebc116495e186109d8346d9cc348594da838 Mon Sep 17 00:00:00 2001
+From: Kendall Willis <k-willis@ti.com>
+Date: Thu, 31 Jul 2025 11:30:22 -0500
+Subject: [PATCH 2/2] demo: Run the simple high resolution demo
+
+Change the demo to the simple high resolution demo. This demo shows the
+TI logo and the time only.
+
+Signed-off-by: Kendall Willis <k-willis@ti.com>
+---
+ lv_conf.h | 2 ++
+ main.c    | 2 +-
+ 2 files changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/lv_conf.h b/lv_conf.h
+index 1edbb89..1efaaa6 100644
+--- a/lv_conf.h
++++ b/lv_conf.h
+@@ -1072,6 +1072,8 @@
+ #define LV_USE_DEMO_KEYPAD_AND_ENCODER 0
+ 
+ /*Benchmark your system*/
++#define LV_USE_DEMO_SIMPLE_HIGH_RES 1
++
+ #define LV_USE_DEMO_HIGH_RES 1
+ 
+ /*Render test for each primitives. Requires at least 480x272 display*/
+diff --git a/main.c b/main.c
+index 0c2e78c..775b455 100644
+--- a/main.c
++++ b/main.c
+@@ -193,7 +193,7 @@ int main(int argc, char **argv)
+ 
+     /*Create a Demo*/
+     lv_sysmon_hide_performance(NULL);
+-    lv_demo_high_res_api_example("/usr/share/ti-lvgl-demo/assets/", "/usr/share/ti-lvgl-demo/assets/img_lv_demo_high_res_ti_logo.png", "/usr/share/ti-lvgl-demo/slides");
++    lv_demo_simple_high_res_api_example("/usr/share/ti-lvgl-demo/assets/img_lv_demo_simple_high_res_ti_logo.png");
+ 
+     lv_linux_run_loop();
+ 
+-- 
+2.34.1
+
