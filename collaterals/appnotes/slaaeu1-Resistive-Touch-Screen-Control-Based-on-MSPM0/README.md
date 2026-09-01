@@ -2,9 +2,12 @@
 
 This example demonstrates 4-wire resistive touch screen control using the MSPM0L1306 microcontroller.
 
+Appnote Link: [Resistive Touch Screen Control Based on MSPM0](https://www.ti.com.cn/lit/an/slaaeu1/slaaeu1.pdf)
+
 ### Available Examples
 
 1. **resistive_touch_detection**: Detects touch events and measures X and Y coordinates once per touch.
+2. **resistive_click_drag_detection**: Detects touch events, measures coordinates, and classifies touches as clicks or long presses based on duration.
 
 ### Hardware Requirements
 
@@ -67,6 +70,8 @@ At startup:
 When touch is detected:
 - Initial message: "TOUCH DETECTED!"
 - For simple touch detection example: "TOUCH DETECTED! X=XXXX  Y=YYYY"
+- For long touches (>=80ms): Coordinate pairs shown as "(X,Y) "
+- For the click/drag detection example: "X=XXXX  Y=YYYY  TIME=ZZZZms - CLICK" or "X=XXXX  Y=YYYY  TIME=ZZZZms - LONG TOUCH"
 
 ### How It Works
 
@@ -77,6 +82,19 @@ When touch is detected:
 3. **Touch Classification for Simple Touch Detection example**:
    - No touch classification. Only detects and measures touch coordinates once.
    - Outputs coordinates when touch is detected.
+4. **Touch Classification for Click/Drag Detection example**:
+   - Timer G measures elapsed time from touch detection to touch release.
+   - Click: Touch duration < 80ms (outputs initial coordinates only).
+   - Long Touch: Touch duration >= 80ms (outputs continuous coordinate pairs during the touch and final coordinates with duration).
+
+### Timer Wraparound Limitation (Click/Drag Detection)
+
+**Important:** Timer G uses a 32-bit downcounter with LFCLK (32,768 Hz) and prescaler 255.
+
+- **Timer Frequency:** 32,768 ÷ 255 ≈ 128.5 Hz
+- **Practical Limit:** Recommended for touch durations ~ 100 seconds
+
+**For typical use cases** (click/drag interactions, which rarely exceed a few seconds), this is not a limitation. If extended holds (>60 seconds) are required, consider resetting the timer periodically or using a different timing mechanism.
 
 ### Configuration Parameters
 
@@ -86,7 +104,9 @@ When touch is detected:
 | X_MAX | 4090 | main.c:40 | Maximum X-coordinate for valid touch (calibration dependent) |
 | Y_MIN | 200 | main.c:41 | Minimum Y-coordinate for valid touch (calibration dependent) |
 | Y_MAX | 3800 | main.c:42 | Maximum Y-coordinate for valid touch (calibration dependent) |
+| LONG_TOUCH_THRESHOLD_MS | 80 | resistive_click_drag_detection/main.c:45 | Threshold in ms to distinguish click vs long touch |
 | INACTIVE_SAMPLE_DELAY | 200 | main.c:47 | Sampling rate in ms when no touch detected |
+| TOUCH_RELEASE_SAMPLING_RATE | 4 | resistive_click_drag_detection/main.c:50 | Delay in ms between touch release checks based on time taken by a peripheral (UART) to transfer data |
 | SETTLE_DELAY | 3.125 | main.c:51 | Voltage settling time in ms after pin configuration |
 | TOUCH_DETECTION_THD | 4000 | resistive_detection.h:40 | ADC threshold for touch detection (12-bit resolution) |
 | X_ADC_CHANNEL | 9 | resistive_detection.h:36 | ADC channel for X+ pin (used for Y-coordinate reading) |

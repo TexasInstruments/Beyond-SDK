@@ -36,9 +36,11 @@
   <h1>Readme</h1>
 <h2 id="example-summary">Resistive Touch Screen</h2>
 <p>This example demonstrates 4-wire resistive touch screen control using the MSPM0L1306 microcontroller.</p>
+<p>Appnote Link: <a href="https://www.ti.com.cn/lit/an/slaaeu1/slaaeu1.pdf">Resistive Touch Screen Control Based on MSPM0</a></p>
 <h3 id="available-examples">Available Examples</h3>
 <ol>
 <li><strong>resistive_touch_detection</strong>: Detects touch events and measures X and Y coordinates once per touch.</li>
+<li><strong>resistive_click_drag_detection</strong>: Detects touch events, measures coordinates, and classifies touches as clicks or long presses based on duration.</li>
 </ol>
 <h3 id="hardware-requirements">Hardware Requirements</h3>
 <p>These examples use a resistive panel with:</p>
@@ -138,6 +140,8 @@ MSPM0 LaunchPad, please visit the <a href="https://www.ti.com/lit/slau869">LP-MS
 <ul>
 <li>Initial message: "TOUCH DETECTED!"</li>
 <li>For simple touch detection example: "TOUCH DETECTED! X=XXXX  Y=YYYY"</li>
+<li>For long touches (&gt;=80ms): Coordinate pairs shown as "(X,Y) "</li>
+<li>For the click/drag detection example: "X=XXXX  Y=YYYY  TIME=ZZZZms - CLICK" or "X=XXXX  Y=YYYY  TIME=ZZZZms - LONG TOUCH"</li>
 </ul>
 <h3 id="how-it-works">How It Works</h3>
 <ol>
@@ -152,6 +156,13 @@ MSPM0 LaunchPad, please visit the <a href="https://www.ti.com/lit/slau869">LP-MS
 <ul>
 <li>No touch classification. Only detects and measures touch coordinates once.</li>
 <li>Outputs coordinates when touch is detected.</li>
+</ul>
+</li>
+<li><strong>Touch Classification for Click/Drag Detection example</strong>:
+<ul>
+<li>Timer G measures elapsed time from touch detection to touch release.</li>
+<li>Click: Touch duration &lt; 80ms (outputs initial coordinates only).</li>
+<li>Long Touch: Touch duration &gt;= 80ms (outputs continuous coordinate pairs during the touch and final coordinates with duration).</li>
 </ul>
 </li>
 </ol>
@@ -197,11 +208,23 @@ MSPM0 LaunchPad, please visit the <a href="https://www.ti.com/lit/slau869">LP-MS
 <td>main.c:42</td>
 <td>Maximum Y-coordinate for valid touch (calibration dependent)</td>
 </tr>
+<tr class="odd">
+<td>LONG_TOUCH_THRESHOLD_MS</td>
+<td>80</td>
+<td>resistive_click_drag_detection/main.c:45</td>
+<td>Threshold in ms to distinguish click vs long touch</td>
+</tr>
 <tr class="even">
 <td>INACTIVE_SAMPLE_DELAY</td>
 <td>200</td>
 <td>main.c:47</td>
 <td>Sampling rate in ms when no touch detected</td>
+</tr>
+<tr class="odd">
+<td>TOUCH_RELEASE_SAMPLING_RATE</td>
+<td>4</td>
+<td>resistive_click_drag_detection/main.c:50</td>
+<td>Delay in ms between touch release checks based on time taken by a peripheral (UART) to transfer data</td>
 </tr>
 <tr class="even">
 <td>SETTLE_DELAY</td>
