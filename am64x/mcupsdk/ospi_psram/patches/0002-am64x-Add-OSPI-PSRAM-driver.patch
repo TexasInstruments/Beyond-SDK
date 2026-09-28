@@ -1,0 +1,1208 @@
+From d0c5bece47e8ebad1e5344605c833579b70c6f90 Mon Sep 17 00:00:00 2001
+From: Aryamaan Chaurasia <a-chaurasia@ti.com>
+Date: Thu, 24 Sep 2026 15:48:04 +0530
+Subject: [PATCH 2/2] am64x: Add OSPI PSRAM driver
+
+- Add OSPI PSRAM board level source files
+- Modify the board makefile to include OSPI PSRAM driver
+
+Signed-off-by: Aryamaan Chaurasia <a-chaurasia@ti.com>
+---
+ .../makefile.am64x.r5f.ti-arm-clang.nortos    |   4 +
+ source/board/psram.h                          | 166 +++++++++
+ source/board/ram/ospi/io_expander.c           |  87 +++++
+ source/board/ram/ospi/ospi_psram_aps6408.h    |  90 +++++
+ source/board/ram/ospi/psram_ospi.c            | 337 +++++++-----------
+ source/board/ram/ospi/psram_ospi.h            | 177 +--------
+ source/board/ram/psram.c                      | 105 ++++++
+ 7 files changed, 591 insertions(+), 375 deletions(-)
+ create mode 100644 source/board/psram.h
+ create mode 100644 source/board/ram/ospi/io_expander.c
+ create mode 100644 source/board/ram/ospi/ospi_psram_aps6408.h
+ create mode 100644 source/board/ram/psram.c
+
+diff --git a/source/board/makefile.am64x.r5f.ti-arm-clang.nortos b/source/board/makefile.am64x.r5f.ti-arm-clang.nortos
+index a2eaa9d..9d9a51b 100644
+--- a/source/board/makefile.am64x.r5f.ti-arm-clang.nortos
++++ b/source/board/makefile.am64x.r5f.ti-arm-clang.nortos
+@@ -30,6 +30,9 @@ FILES_common := \
+     flash_nand_gpmc.c \
+     flash_nor_ospi.c \
+     ram.c \
++    psram.c \
++    psram_ospi.c \
++    io_expander.c \
+     psram_gpmc.c \
+     led.c \
+     led_gpio.c \
+@@ -48,6 +51,7 @@ FILES_PATH_common = \
+     flash/sfdp \
+     flash/ospi \
+     ram \
++    ram/ospi \
+     ram/gpmc \
+     led \
+     ioexp \
+diff --git a/source/board/psram.h b/source/board/psram.h
+new file mode 100644
+index 0000000..49dbbd9
+--- /dev/null
++++ b/source/board/psram.h
+@@ -0,0 +1,166 @@
++/*
++ *  Copyright (C) 2021-2023 Texas Instruments Incorporated
++ *
++ *  Redistribution and use in source and binary forms, with or without
++ *  modification, are permitted provided that the following conditions
++ *  are met:
++ *
++ *    Redistributions of source code must retain the above copyright
++ *    notice, this list of conditions and the following disclaimer.
++ *
++ *    Redistributions in binary form must reproduce the above copyright
++ *    notice, this list of conditions and the following disclaimer in the
++ *    documentation and/or other materials provided with the
++ *    distribution.
++ *
++ *    Neither the name of Texas Instruments Incorporated nor the names of
++ *    its contributors may be used to endorse or promote products derived
++ *    from this software without specific prior written permission.
++ *
++ *  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
++ *  "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
++ *  LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
++ *  A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
++ *  OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++ *  SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
++ *  LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
++ *  DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
++ *  THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++ *  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++ *  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++ */
++
++#ifndef PSRAM_H_
++#define PSRAM_H_
++
++#include <stdint.h>
++#include <kernel/dpl/SystemP.h>
++
++/**
++ *  \defgroup BOARD_PSRAM_MODULE APIs for PSRAM
++ *  \ingroup BOARD_MODULE
++ *
++ *  This module contains APIs to program and use the Psram module on the board.
++ *  See \ref BOARD_PSRAM_PAGE for more details.
++ *
++ *  @{
++ */
++/**
++ * \brief Handle to the PSRAM driver returned by Psram_open()
++ */
++typedef void  *Psram_Handle;
++
++/**
++ * \brief Forward declaration of \ref Psram_Config
++ */
++typedef struct Psram_Config_s Psram_Config;
++
++/**
++ * \brief Forward declaration of \ref Psram_Params
++ */
++typedef struct Psram_Params_s Psram_Params;
++
++typedef struct Psram_Devconfig_s
++{
++    uint8_t cmdRd;
++    uint8_t cmdWr;
++    uint8_t cmdReset;
++    uint8_t cmdRegRd;
++    uint8_t cmdRegWr;
++    uint8_t dummyClksRd;
++    uint8_t dummyClksWr;
++    uint8_t dummyClksCmd;
++
++} Psram_DevConfig;
++
++typedef struct Psram_Attrs_s {
++
++    uint32_t psramType;      /**< Psram type. */
++    char *psramName;         /**< Psram name. Taken from Sysconfig */
++    uint32_t deviceId;       /**< Psram device ID as read from the Psram device, this will be filled when Psram_open() is called */
++    uint32_t manufacturerId; /**< Psram manufacturer ID as read from the Psram device, this will be filled when Psram_open() is called */
++    uint32_t driverInstance; /**< Underlying SPI peripheral driver instance that is used by the Psram driver, e.g., OSPI driver */
++    uint32_t psramSize;      /**< Psram size, in bytes */
++
++} Psram_Attrs;
++
++typedef int32_t (*Psram_OpenFxn)(Psram_Config *config);
++
++typedef void (*Psram_CloseFxn)(Psram_Config *config);
++typedef int32_t (*Psram_ReadFxn)(Psram_Config *config, uint32_t offset,
++                                   uint8_t *buf, uint32_t len) ;
++typedef int32_t (*Psram_WriteFxn)(Psram_Config *config, uint32_t offset,
++                                   uint8_t *buf, uint32_t len) ;
++
++/**
++ * \brief Driver implementation callbacks
++ */
++typedef struct Psram_Fxns_s
++{
++    Psram_OpenFxn  openFxn;  /**< Psram driver implementation specific callback */
++    Psram_CloseFxn closeFxn; /**< Psram driver implementation specific callback */
++    Psram_ReadFxn  readFxn;  /**< Psram driver implementation specific callback */
++    Psram_WriteFxn writeFxn; /**< Psram driver implementation specific callback */
++} Psram_Fxns;
++
++/**
++ * \brief Psram driver configuration, these are filled by SysCfg based on the psram device that is selected.
++ */
++typedef struct Psram_Config_s
++{
++    Psram_Attrs                *attrs;       /**< Psram device attributes */
++    Psram_Fxns                 *fxns;        /**< Psram device implementation functions */
++    Psram_DevConfig            *devConfig;   /**< Psram device configuration */
++    void                       *object;      /**< Psram driver object, used to maintain driver implementation state */
++
++} Psram_Config;
++
++/**
++ * \brief Psram device config. This will be part of the psram config, so has to
++ *        be filled by sysconfig or otherwise before invoking Psram_open
++ */
++
++/**
++ *
++ * \brief User implementation of a custom function to handle vendor specific quirks
++ *
++ * Typically this callback is hidden from the end application and is implemented
++ * when a new type of psram device needs to be implemented.
++ *
++ * \param config [in] psram configuration for the specific psram device
++ *
++ * \return SystemP_SUCCESS on success, else failure
++ */
++typedef int32_t (*Psram_quirksFxn)(Psram_Config *config);
++
++/**
++ * \brief User implementation of a custom function to configure psram to operate in a specific protocol
++ *
++ * \param config [in] psram configuration for the specific psram device
++ *
++ * \return SystemP_SUCCESS on success, else failure
++ */
++typedef int32_t (*Psram_custProtocolFxn)(Psram_Config *config);
++
++/** @} */
++
++
++/**
++ * \brief Parameters passed during psram_open()
++ */
++typedef struct Psram_Params_s {
++
++    Psram_quirksFxn quirksFxn;
++    Psram_custProtocolFxn custProtoFxn;
++
++} Psram_Params;
++
++Psram_Attrs *Psram_getAttrs(uint32_t instanceId);
++Psram_Handle Psram_open(uint32_t instanceId, Psram_Params *params);
++void Psram_close(Psram_Handle handle);
++int32_t Psram_write(Psram_Handle handle, uint32_t offset, uint8_t *buf, uint32_t len);
++int32_t Psram_read(Psram_Handle handle, uint32_t offset, uint8_t *buf, uint32_t len);
++
++/** @} */
++
++#endif /* PSRAM_H_ */
+\ No newline at end of file
+diff --git a/source/board/ram/ospi/io_expander.c b/source/board/ram/ospi/io_expander.c
+new file mode 100644
+index 0000000..874ae73
+--- /dev/null
++++ b/source/board/ram/ospi/io_expander.c
+@@ -0,0 +1,87 @@
++/*
++ *  Copyright (C) 2023 Texas Instruments Incorporated
++ *
++ *  Redistribution and use in source and binary forms, with or without
++ *  modification, are permitted provided that the following conditions
++ *  are met:
++ *
++ *    Redistributions of source code must retain the above copyright
++ *    notice, this list of conditions and the following disclaimer.
++ *
++ *    Redistributions in binary form must reproduce the above copyright
++ *    notice, this list of conditions and the following disclaimer in the
++ *    documentation and/or other materials provided with the
++ *    distribution.
++ *
++ *    Neither the name of Texas Instruments Incorporated nor the names of
++ *    its contributors may be used to endorse or promote products derived
++ *    from this software without specific prior written permission.
++ *
++ *  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
++ *  "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
++ *  LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
++ *  A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
++ *  OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++ *  SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
++ *  LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
++ *  DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
++ *  THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++ *  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++ *  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++ */
++
++#include <board/ioexp/ioexp_tca6424.h>
++
++static TCA6424_Config  gTCA6424_Config;
++
++int32_t i2c_io_expander(void *args)
++{
++    int32_t             status = SystemP_SUCCESS;
++    TCA6424_Params      tca6424Params;
++    TCA6424_Params_init(&tca6424Params);
++    status = TCA6424_open(&gTCA6424_Config, &tca6424Params);
++    uint32_t            ioIndex;
++
++    if(status == SystemP_SUCCESS)
++    {
++        ioIndex = 0x13;
++        status = TCA6424_setOutput(
++                     &gTCA6424_Config,
++                     ioIndex,
++                     TCA6424_OUT_STATE_HIGH);
++
++        /* Configure as output  */
++        status = TCA6424_config(
++                      &gTCA6424_Config,
++                      ioIndex,
++                      TCA6424_MODE_OUTPUT);
++    }
++    TCA6424_close(&gTCA6424_Config);
++    return status;
++}
++
++int32_t i2c_io_expander_set2flash(void *args)
++{
++    int32_t             status = SystemP_SUCCESS;
++    TCA6424_Params      tca6424Params;
++    TCA6424_Params_init(&tca6424Params);
++    status = TCA6424_open(&gTCA6424_Config, &tca6424Params);
++    uint32_t            ioIndex;
++
++    if(status == SystemP_SUCCESS)
++    {
++        ioIndex = 0x13;
++        status = TCA6424_setOutput(
++                     &gTCA6424_Config,
++                     ioIndex,
++                     TCA6424_OUT_STATE_LOW);
++
++        /* Configure as output  */
++        status = TCA6424_config(
++                      &gTCA6424_Config,
++                      ioIndex,
++                      TCA6424_MODE_OUTPUT);
++    }
++    TCA6424_close(&gTCA6424_Config);
++    return status;
++}
+diff --git a/source/board/ram/ospi/ospi_psram_aps6408.h b/source/board/ram/ospi/ospi_psram_aps6408.h
+new file mode 100644
+index 0000000..dd7d842
+--- /dev/null
++++ b/source/board/ram/ospi/ospi_psram_aps6408.h
+@@ -0,0 +1,90 @@
++/*
++ *  Copyright (C) 2021-2023 Texas Instruments Incorporated
++ *
++ *  Redistribution and use in source and binary forms, with or without
++ *  modification, are permitted provided that the following conditions
++ *  are met:
++ *
++ *    Redistributions of source code must retain the above copyright
++ *    notice, this list of conditions and the following disclaimer.
++ *
++ *    Redistributions in binary form must reproduce the above copyright
++ *    notice, this list of conditions and the following disclaimer in the
++ *    documentation and/or other materials provided with the
++ *    distribution.
++ *
++ *    Neither the name of Texas Instruments Incorporated nor the names of
++ *    its contributors may be used to endorse or promote products derived
++ *    from this software without specific prior written permission.
++ *
++ *  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
++ *  "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
++ *  LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
++ *  A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
++ *  OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++ *  SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
++ *  LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
++ *  DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
++ *  THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++ *  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++ *  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++ */
++
++#ifndef OSPI_PSRAM_APS6408_H_
++#define OSPI_PSRAM_APS6408_H_
++
++/**
++ * This file contains description of the APS6408L OSPI PSRAM memory.
++ * For additional details check APS6408L-OBMx datasheet
++ * RAM SIZE is 0x800000   (64 MBits, 8 MBytes)
++ */
++
++#define PAGE_SIZE_8MB           0x800000
++#define BLOCK_SIZE_8MB          0x800000
++
++/* Mode Register 0 */
++#define OSPI_PSRAM_APS6408_MR0_ADDRESS            0x00000000U
++
++#define OSPI_PSRAM_APS6408_MR0_DRIVE_STRENGTH     0x01U       /* Drive Strength                      */
++#define OSPI_PSRAM_APS6408_MR0_RLC_3              0x00U
++
++#define OSPI_PSRAM_APS6408_MR0_LATENCY_TYPE       0x20U       /* Latency Type                        */
++
++/* Mode Register 1 */
++#define OSPI_PSRAM_APS6408_MR1_ADDRESS            0x00000001U
++#define OSPI_PSRAM_APS6408_MR1_VENDOR_ID          0x1FU       /* Vendor Identifier                   */
++#define OSPI_PSRAM_APS6408_MR1_VENDOR_ID_APM      0x0DU       /* Vendor Identifier APM               */
++
++/* Mode Register 2 */
++#define OSPI_PSRAM_APS6408_MR2_ADDRESS            0x00000002U
++#define OSPI_PSRAM_APS6408_MR2_DEVICE_ID          0x18U       /* Device Identifier                   */
++#define OSPI_PSRAM_APS6408_MR2_DEVID_GEN_3        0x02U       /* Device Identifier                   */
++
++/* Mode Register 4 */
++#define OSPI_PSRAM_APS6408_MR4_ADDRESS            0x00000004U
++#define OSPI_PSRAM_APS6408_MR4_WLC_3              0x00U
++
++/* Mode Register 6 */
++#define OSPI_PSRAM_APS6408_MR6_ADDRESS            0x00000006U
++
++/* Mode Register 8 */
++#define OSPI_PSRAM_APS6408_MR8_ADDRESS            0x00000008U
++#define OSPI_PSRAM_APS6408_MR8_BT                 0x04U       /* Burst Type                          */
++#define OSPI_PSRAM_APS6408_MR8_RX                 0x08U
++
++/* Read Operations */
++#define OSPI_PSRAM_APS6408_READ_CMD               0x00        /* Synchronous Read                    */
++#define OSPI_PSRAM_APS6408_READ_LINEAR_BURST_CMD  0x20        /* Linear Burst Read                   */
++
++/* Write Operations */
++#define OSPI_PSRAM_APS6408_WRITE_CMD              0x80U       /* Synchronous Write                   */
++#define OSPI_PSRAM_APS6408_WRITE_LINEAR_BURST_CMD 0xA0U       /* Linear Burst Write                  */
++
++/* Reset Operations */
++#define OSPI_PSRAM_APS6408_RESET_CMD              0xFFU       /* Global Reset                        */
++
++/* Register Operations */
++#define OSPI_PSRAM_APS6408_READ_REG_CMD           0x40U       /* Mode Register Read                  */
++#define OSPI_PSRAM_APS6408_WRITE_REG_CMD          0xC0U       /* Mode Register Write                 */
++
++#endif /* OSPI_PSRAM_APS6408_H_ */
+\ No newline at end of file
+diff --git a/source/board/ram/ospi/psram_ospi.c b/source/board/ram/ospi/psram_ospi.c
+index 1757396..1a99b05 100644
+--- a/source/board/ram/ospi/psram_ospi.c
++++ b/source/board/ram/ospi/psram_ospi.c
+@@ -1,5 +1,5 @@
+ /*
+- *  Copyright (C) 2025 Texas Instruments Incorporated
++ *  Copyright(C) 2023 Texas Instruments Incorporated
+  *
+  *  Redistribution and use in source and binary forms, with or without
+  *  modification, are permitted provided that the following conditions
+@@ -22,87 +22,38 @@
+  *  LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+  *  A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+  *  OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+- *  SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
++ *  SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES(INCLUDING, BUT NOT
+  *  LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+  *  DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+  *  THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+- *  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+  *  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+  */
+ 
+-#include <string.h>
+ #include "psram_ospi.h"
++#include <kernel/dpl/CacheP.h>
++#include "ospi_psram_aps6408.h"
+ 
+-/* Mode Register 0 */
+-#define OSPI_PSRAM_MR0_ADDRESS            0x00000000U
+-#define OSPI_PSRAM_MR0_DRIVE_STRENGTH     0x01U       /* Drive Strength                      */
+-#define OSPI_PSRAM_MR0_READ_LATENCY_CODE  0x04U       /* Read Latency Code                   */
+-#define OSPI_PSRAM_MR0_RLC_3              0x00U       /* Read Latency Code 3                 */
+-#define OSPI_PSRAM_MR0_LATENCY_TYPE       0x20U       /* Latency Type                        */
+-
+-/* Mode Register 1 */
+-#define OSPI_PSRAM_MR1_ADDRESS            0x00000001U
+-#define OSPI_PSRAM_MR1_VENDOR_ID_MASK     0x1FU       /* Vendor Identifier                   */
+-
+-/* Mode Register 2 */
+-#define OSPI_PSRAM_MR2_ADDRESS            0x00000002U
+-#define OSPI_PSRAM_MR2_DEVICE_ID_MASK     0x18U       /* Device Identifier                   */
+-
+-/* Mode Register 4 */
+-#define OSPI_PSRAM_MR4_ADDRESS            0x00000004U
+-#define OSPI_PSRAM_MR4_WLC_3              0x80U       /* Write Latency Code 3                */
+-
+-/* Mode Register 6 */
+-#define OSPI_PSRAM_MR6_ADDRESS            0x00000006U
+-
+-/* Mode Register 8 */
+-#define OSPI_PSRAM_MR8_ADDRESS            0x00000008U
+-#define OSPI_PSRAM_MR8_BT                 0x04U       /* Burst Type                          */
+-
+-#define OSPI_PSRAM_RD_CAPTURE_DELAY       8U
+-
+-static uint8_t gReadBuf[OSPI_FLASH_ATTACK_VECTOR_SIZE] = { 0U };
+-
+-static int32_t Psram_ospiOpen(Ram_Config *config);
+-static int32_t Psram_ospiRead(Ram_Config *config, uint32_t ramOffset, uint8_t *pbuf, uint32_t pbufLen);
+-static int32_t Psram_ospiWrite(Ram_Config *config, uint32_t ramOffset,uint8_t *pbuf, uint32_t pbufLen);
+-static void Psram_ospiClose(Ram_Config *config);
+-static int32_t Psram_ospiReadCmd(Ram_Config *config, uint8_t cmd, uint32_t readOffset,uint8_t dummyBits,
+-                            uint8_t numAddrBytes, uint8_t *rxBuf, uint32_t rxBufLen);
+-static int32_t Psram_ospiReadId(Ram_Config *config, uint32_t *manufacturerId, uint32_t *deviceId);
+-static int32_t Psram_ospiReset(Ram_Config *config);
+-static int32_t Psram_ospiWriteCmd(Ram_Config *config, uint8_t cmd, uint32_t writeOffset, uint8_t *txBuf, uint32_t txBufLen);
+-
+-Ram_Fxns gPsramOspiFxns = {
++Psram_Fxns gPsramOspiFxns = {
+     .openFxn = Psram_ospiOpen,
+     .closeFxn = Psram_ospiClose,
+     .readFxn = Psram_ospiRead,
+     .writeFxn = Psram_ospiWrite,
+ };
+ 
+-uint32_t gProtocolMap[] =
++int32_t Psram_ospiOpen(Psram_Config *config)
+ {
+-    [OSPI_PROTO_1S_1S_1S] = OSPI_NOR_PROTOCOL(1,1,1,0),
+-    [OSPI_PROTO_1S_1S_2S] = OSPI_NOR_PROTOCOL(1,1,2,0),
+-    [OSPI_PROTO_1S_1S_4S] = OSPI_NOR_PROTOCOL(1,1,4,0),
+-    [OSPI_PROTO_1S_1S_8S] = OSPI_NOR_PROTOCOL(1,1,8,0),
+-    [OSPI_PROTO_4S_4S_4S] = OSPI_NOR_PROTOCOL(4,4,4,0),
+-    [OSPI_PROTO_4S_4D_4D] = OSPI_NOR_PROTOCOL(4,4,4,1),
+-    [OSPI_PROTO_8S_8S_8S] = OSPI_NOR_PROTOCOL(8,8,8,0),
+-    [OSPI_PROTO_8D_8D_8D] = OSPI_NOR_PROTOCOL(8,8,8,1),
+-};
++    int32_t status = SystemP_SUCCESS;
+ 
++    uint8_t MR0 = OSPI_PSRAM_APS6408_MR0_DRIVE_STRENGTH + OSPI_PSRAM_APS6408_MR0_RLC_3 + OSPI_PSRAM_APS6408_MR0_LATENCY_TYPE;
++    uint8_t MR4 = OSPI_PSRAM_APS6408_MR4_WLC_3;
++    uint8_t MR8 = OSPI_PSRAM_APS6408_MR8_RX + OSPI_PSRAM_APS6408_MR8_BT;
+ 
+-static int32_t Psram_ospiOpen(Ram_Config *config)
+-{
+-    int32_t status = SystemP_SUCCESS;
+-    uint8_t txDataMR0 = OSPI_PSRAM_MR0_DRIVE_STRENGTH + OSPI_PSRAM_MR0_READ_LATENCY_CODE + OSPI_PSRAM_MR0_LATENCY_TYPE;
+-    uint8_t txDataMR4 = OSPI_PSRAM_MR4_WLC_3;
+-    uint8_t txDataMR8 = OSPI_PSRAM_MR8_BT;
++    uint32_t manfId, deviceId;
++
++    Psram_Attrs *attrs = config->attrs;
++    Psram_OspiObject *obj = (Psram_OspiObject*)(config->object);
+ 
+-    Ram_Attrs *attrs = config->attrs;
+-    Ram_OspiPsramObject *obj = (Ram_OspiPsramObject*)(config->object);
+-    
+     obj->ospiHandle = OSPI_getHandle(attrs->driverInstance);
+ 
+     if(obj->ospiHandle == NULL)
+@@ -110,261 +61,221 @@ static int32_t Psram_ospiOpen(Ram_Config *config)
+         status = SystemP_FAILURE;
+     }
+ 
+-    if(status == SystemP_SUCCESS)
++    if(SystemP_SUCCESS == status)
+     {
+-        const OSPI_Attrs *ospi_attrs = ((OSPI_Config *)obj->ospiHandle)->attrs;
+ 
+         Psram_ospiReset(config);
+ 
+         OSPI_configResetPin(obj->ospiHandle, OSPI_RESETPIN_DEDICATED);
+-        /* Set device size and addressing bytes */
+-        OSPI_setDeviceSize(obj->ospiHandle, config->attrs->ramSize, config->attrs->ramSize);
+-        
+-        OSPI_setProtocol(obj->ospiHandle, gProtocolMap[ospi_attrs->protocol]);
++
++        OSPI_setDeviceSize(obj->ospiHandle, PAGE_SIZE_8MB, BLOCK_SIZE_8MB);
++
++        OSPI_setProtocol(obj->ospiHandle, OSPI_NOR_PROTOCOL(8,8,8,1));
+ 
+         OSPI_setReadDummyCycles(obj->ospiHandle,config->devConfig->dummyClksRd);
+ 
+         OSPI_setWriteDummyCycles(obj->ospiHandle,config->devConfig->dummyClksWr);
+ 
+         OSPI_setCmdDummyCycles(obj->ospiHandle,config->devConfig->dummyClksCmd);
+-    
+-        status += Psram_ospiWriteCmd(config,config->devConfig->cmdRegWr,OSPI_PSRAM_MR0_ADDRESS,&txDataMR0,(sizeof(txDataMR0)/sizeof(uint8_t)));
++
++        status += Psram_ospiWriteCmd(config,config->devConfig->cmdRegWr,OSPI_PSRAM_APS6408_MR0_ADDRESS,&MR0,(sizeof(MR0)/sizeof(uint8_t)));
+         
+         if(status == SystemP_SUCCESS)
+         {
+-            status += Psram_ospiWriteCmd(config,config->devConfig->cmdRegWr,OSPI_PSRAM_MR4_ADDRESS,&txDataMR4,(sizeof(txDataMR4)/sizeof(uint8_t)));
++            status += Psram_ospiWriteCmd(config,config->devConfig->cmdRegWr,OSPI_PSRAM_APS6408_MR4_ADDRESS,&MR4,(sizeof(MR4)/sizeof(uint8_t)));
+         }
+         
+         if(status == SystemP_SUCCESS)
+         {
+-            status += Psram_ospiWriteCmd(config,config->devConfig->cmdRegWr,OSPI_PSRAM_MR8_ADDRESS,&txDataMR8,(sizeof(txDataMR8)/sizeof(uint8_t)));
++            status += Psram_ospiWriteCmd(config,config->devConfig->cmdRegWr,OSPI_PSRAM_APS6408_MR8_ADDRESS,&MR8,(sizeof(MR8)/sizeof(uint8_t)));
+         }
+ 
+         OSPI_setNumAddrBytes(obj->ospiHandle,4);
+         obj->numAddrBytes = 4;
+-    
+-    }
+-
+-    if(status == SystemP_SUCCESS)
+-    {
+-        OSPI_setXferOpCodes(obj->ospiHandle, config->devConfig->cmdRd, config->devConfig->cmdWr);
+-    }
+ 
+-    if(status == SystemP_SUCCESS)
+-    {   
+-        uint8_t readCaptureDelay = 0U;
+-
+-        status += Psram_ospiWrite(config, 0, gOspiFlashAttackVector, OSPI_FLASH_ATTACK_VECTOR_SIZE);
+-        
+         if(status == SystemP_SUCCESS)
+         {
+-            OSPI_setRdDataCaptureDelay(obj->ospiHandle, readCaptureDelay);
+-            status = Psram_ospiRead(config, 0, gReadBuf, OSPI_FLASH_ATTACK_VECTOR_SIZE);
+-            if(memcmp(gReadBuf, gOspiFlashAttackVector, OSPI_FLASH_ATTACK_VECTOR_SIZE)!=0)
+-            {
+-                status = SystemP_FAILURE;
+-            }
++            OSPI_setXferOpCodes(obj->ospiHandle, config->devConfig->cmdRd, config->devConfig->cmdWr);
+         }
++    }
+ 
+-        while((status != SystemP_SUCCESS) && readCaptureDelay <= OSPI_PSRAM_RD_CAPTURE_DELAY)
+-        {
+-            readCaptureDelay++;
+-            OSPI_setRdDataCaptureDelay(obj->ospiHandle, readCaptureDelay);
+-            status = Psram_ospiRead(config, 0, gReadBuf, OSPI_FLASH_ATTACK_VECTOR_SIZE);
+-            if(memcmp(gReadBuf, gOspiFlashAttackVector, OSPI_FLASH_ATTACK_VECTOR_SIZE)!=0)
+-            {
+-                status = SystemP_FAILURE;
+-            }
+-        }
++	OSPI_setRdDataCaptureDelay(obj->ospiHandle, 0x5); // Read delay value for reliable PSRAM operations
+ 
+-    }
++    status += Psram_ospiReadId(config, &manfId, &deviceId);
++
++    if((SystemP_SUCCESS == status) && (deviceId == OSPI_PSRAM_APS6408_MR2_DEVID_GEN_3) && (manfId == OSPI_PSRAM_APS6408_MR1_VENDOR_ID_APM))
++    {
++        DebugP_log("PSRAM Manufacturer ID : 0x%X\r\n", manfId);
++        DebugP_log("PSRAM Device ID: 0x%X\r\n", deviceId);
+ 
+-    obj->phyEnable = OSPI_isPhyEnable(obj->ospiHandle);
++    }
++    else
++    {
++        DebugP_log("Failed to connect to PSRAM!!\r\n");
++        DebugP_log("Read PSRAM Manufacturer ID : 0x%X\r\n", manfId);
++        DebugP_log("Read PSRAM Device ID: 0x%X\r\n", deviceId);
++    }
+ 
+     return status;
+ }
+ 
+-static int32_t Psram_ospiReadCmd(Ram_Config *config, uint8_t cmd, uint32_t readOffset, uint8_t dummyBits,
+-                            uint8_t numAddrBytes, uint8_t *rxBuf, uint32_t rxBufLen)
++
++int32_t Psram_ospiWrite(Psram_Config *config, uint32_t offset, uint8_t *pbuf, uint32_t len)
+ {
+     int32_t status = SystemP_SUCCESS;
+-    Ram_OspiPsramObject *obj = (Ram_OspiPsramObject*)(config->object);
++    Psram_Attrs *attrs = config->attrs;
++    Psram_OspiObject *obj = (Psram_OspiObject*)(config->object);
+ 
+     if(obj->ospiHandle == NULL)
+     {
+         status = SystemP_FAILURE;
+     }
+ 
+-    OSPI_ReadCmdParams  rdParams;
++    /* Validate address input */
++    /*From datasheet APS6408L we have:
++    Memory accesses are required to start on even addresses
++    Write burst length has a minimum of 2 bytes. */
++    if((len < 2) || (offset + len > attrs->psramSize))
++    {
++        status = SystemP_FAILURE;
++    }
+ 
+-    if(status == SystemP_SUCCESS)
++    /* check if writeAddr is even, if not fix it */
++    if(offset & 1)
+     {
+-        OSPI_ReadCmdParams_init(&rdParams);
+-        rdParams.cmd           = cmd;
+-        rdParams.cmdAddr       = readOffset;
+-        rdParams.rxDataBuf     = rxBuf;
+-        rdParams.rxDataLen     = rxBufLen;
+-        rdParams.dummyBits     = dummyBits;
+-		rdParams.numAddrBytes  = numAddrBytes;
+-		
+-        status = OSPI_readCmd(obj->ospiHandle, &rdParams);
++        offset--;
+     }
+ 
++    if (status == SystemP_SUCCESS)
++    {
++        OSPI_Transaction transaction;
++        OSPI_Transaction_init(&transaction);
++        transaction.addrOffset = offset;
++        transaction.buf = (void *)(pbuf);
++        transaction.count = len;
++
++        status = OSPI_writeDirect(obj->ospiHandle, &transaction);
++    }
+     return status;
+ }
+ 
+-static int32_t Psram_ospiWriteCmd(Ram_Config *config, uint8_t cmd, uint32_t writeOffset, uint8_t *txBuf, uint32_t txBufLen)
++int32_t Psram_ospiRead(Psram_Config *config, uint32_t offset, uint8_t *pbuf, uint32_t len)
+ {
+     int32_t status = SystemP_SUCCESS;
+-    Ram_OspiPsramObject *obj = (Ram_OspiPsramObject *)(config->object);
++    Psram_Attrs *attrs = config->attrs;
++    Psram_OspiObject *obj = (Psram_OspiObject*)(config->object);
+ 
+     if(obj->ospiHandle == NULL)
+     {
+         status = SystemP_FAILURE;
+     }
+ 
+-    if(SystemP_SUCCESS == status)
++    /* Validate address input */
++    if ((offset + len) > (attrs->psramSize))
+     {
+-        OSPI_WriteCmdParams wrParams;
+-        OSPI_WriteCmdParams_init(&wrParams);
+-        wrParams.cmd        = cmd;
+-        wrParams.cmdAddr    = writeOffset;
+-        wrParams.txDataBuf  = txBuf;
+-        wrParams.txDataLen  = txBufLen;
+-        wrParams.numAddrBytes = obj->numAddrBytes;
+-        status += OSPI_writeCmd(obj->ospiHandle , &wrParams);
++        status = SystemP_FAILURE;
+     }
+ 
++    if (status == SystemP_SUCCESS)
++    {
++        OSPI_Transaction transaction;
++        OSPI_Transaction_init(&transaction);
++        transaction.addrOffset = offset;
++        transaction.buf = (void *)pbuf;
++        transaction.count = len;
++
++        status = OSPI_readDirect(obj->ospiHandle, &transaction);
++    }
+     return status;
+ }
+ 
+-static int32_t Psram_ospiReadId(Ram_Config *config, uint32_t *manufacturerId, uint32_t *deviceId)
++int32_t Psram_ospiReadCmd(Psram_Config *config, uint8_t cmd, uint32_t readAddr, uint8_t dummyBits, uint8_t numAddrBytes ,uint8_t *rxBuf, uint32_t rxLen)
+ {
+     int32_t status = SystemP_SUCCESS;
+-    Ram_OspiPsramObject *obj = (Ram_OspiPsramObject *)(config->object);
++    Psram_OspiObject *obj = (Psram_OspiObject*)(config->object);
+ 
+-    uint8_t cmd = config->devConfig->cmdRegRd;
+-    uint8_t numAddrBytes = obj->numAddrBytes;
+-    uint8_t dummyBits = config->devConfig->dummyClksCmd;
+-    uint32_t cmdAddr = OSPI_PSRAM_MR1_ADDRESS;
+-    uint8_t idCode[2] = { 0 };
++    if(obj->ospiHandle == NULL)
++    {
++        status = SystemP_FAILURE;
++    }
+ 
+-    status += Psram_ospiReadCmd(config, cmd, cmdAddr, dummyBits, numAddrBytes, idCode, sizeof(idCode)/sizeof(uint8_t));
++    OSPI_ReadCmdParams  rdParams;
+ 
+     if(status == SystemP_SUCCESS)
+     {
+-        *manufacturerId = (uint32_t)idCode[0] & (OSPI_PSRAM_MR1_VENDOR_ID_MASK);
+-		*deviceId = ((uint32_t)idCode[1] & (OSPI_PSRAM_MR2_DEVICE_ID_MASK)) >> (3);
+-    }
++        OSPI_ReadCmdParams_init(&rdParams);
++        rdParams.cmd           = cmd;
++        rdParams.cmdAddr       = readAddr;
++        rdParams.rxDataBuf     = rxBuf;
++        rdParams.rxDataLen     = rxLen;
++        rdParams.dummyBits     = dummyBits;
++		rdParams.numAddrBytes  = numAddrBytes;
+ 
+-    if((*manufacturerId != config->attrs->manufacturerId) || (*deviceId != config->attrs->deviceId))
+-    {
+-        status = SystemP_FAILURE;
++        status = OSPI_readCmd(obj->ospiHandle, &rdParams);
+     }
+ 
+     return status;
+ }
+ 
+-static int32_t Psram_ospiWrite(Ram_Config *config, uint32_t ramOffset, uint8_t *buf, uint32_t bufLen)
++int32_t Psram_ospiReadId(Psram_Config *config, uint32_t *manufacturerId, uint32_t *deviceId)
+ {
+     int32_t status = SystemP_SUCCESS;
+-    Ram_Attrs *attrs = config->attrs;
+-    Ram_OspiPsramObject *obj = (Ram_OspiPsramObject*)(config->object);
++    Psram_OspiObject *obj = (Psram_OspiObject *)(config->object);
+ 
+-    if(obj->ospiHandle == NULL)
+-    {
+-        status = SystemP_FAILURE;
+-    }
++    uint8_t cmd = config->devConfig->cmdRegRd;
++    uint8_t numAddrBytes = obj->numAddrBytes;
++    uint8_t dummyBits = config->devConfig->dummyClksCmd;
++    uint32_t cmdAddr = OSPI_PSRAM_APS6408_MR1_ADDRESS;
++    uint8_t idCode[2] = { 0 };
+ 
+-    /* Validate address input */
+-    if((ramOffset + bufLen) > (attrs->ramSize) || (bufLen < 2))
+-    {
+-        status = SystemP_FAILURE;
+-    }
+-    
+-    /* Check for odd address */
+-    if(ramOffset & 1)
+-    {
+-        status = SystemP_FAILURE;
+-    }
++    status +=Psram_ospiReadCmd(config, cmd, cmdAddr, dummyBits, numAddrBytes, idCode, sizeof(idCode)/sizeof(uint8_t));
+ 
+     if(status == SystemP_SUCCESS)
+     {
+-        const OSPI_Attrs *ospi_attrs = ((OSPI_Config *)obj->ospiHandle)->attrs;
+-        uint32_t baseAddress = ospi_attrs->dataBaseAddr;
+-        uint32_t size = bufLen;
+-
+-        if (status == SystemP_SUCCESS)
+-        {
+-            status += OSPI_enableDacMode(obj->ospiHandle);
+-
+-            if(status == SystemP_SUCCESS)
+-            {
+-                uint16_t *pSrc = (uint16_t *)buf;
+-                uint16_t *pDst = (uint16_t *)(ramOffset + baseAddress);
+-                while (size != 0U)
+-                {
+-                    *pDst++ = *pSrc++;
+-                    size-=2;
+-                }
+-            }
+-
+-            status = SystemP_SUCCESS;
+-        }
++        /* Keep only Vendor ID from Mode Register 1 */
++        *manufacturerId = (uint32_t)idCode[0] & (OSPI_PSRAM_APS6408_MR1_VENDOR_ID);
++        /* Keep only Device ID from Mode Register 2 */
++		*deviceId = ((uint32_t)idCode[1] & (OSPI_PSRAM_APS6408_MR2_DEVICE_ID)) >> (3);
+     }
+-    
++
+     return status;
+ }
+ 
+-static int32_t Psram_ospiRead(Ram_Config *config, uint32_t ramOffset, uint8_t *buf, uint32_t bufLen)
++int32_t Psram_ospiWriteCmd(Psram_Config *config, uint8_t cmd, uint32_t writeAddr, uint8_t *txBuf, uint32_t txLen)
+ {
+     int32_t status = SystemP_SUCCESS;
+-    Ram_Attrs *attrs = config->attrs;
+-    Ram_OspiPsramObject *obj = (Ram_OspiPsramObject*)(config->object);
++    Psram_OspiObject *obj = (Psram_OspiObject *)(config->object);
+ 
+     if(obj->ospiHandle == NULL)
+     {
+         status = SystemP_FAILURE;
+     }
+ 
+-    /* Validate address input */
+-    if ((ramOffset + bufLen) > (attrs->ramSize))
+-    {
+-        status = SystemP_FAILURE;
+-    }
+-
+-    if(obj->phyEnable)
+-    {
+-        OSPI_enablePhy(obj->ospiHandle);
+-    }
+-
+-    if (status == SystemP_SUCCESS)
++    if(SystemP_SUCCESS == status)
+     {
+-        OSPI_Transaction transaction;
+-        OSPI_Transaction_init(&transaction);
+-        transaction.addrOffset = ramOffset;
+-        transaction.buf = (void *)buf;
+-        transaction.count = bufLen;
+-        status = OSPI_readDirect(obj->ospiHandle, &transaction);
++        OSPI_WriteCmdParams wrParams;
++        OSPI_WriteCmdParams_init(&wrParams);
++        wrParams.cmd        = cmd;
++        wrParams.cmdAddr    = writeAddr;
++        wrParams.txDataBuf  = txBuf;
++        wrParams.txDataLen  = txLen;
++        wrParams.numAddrBytes = obj->numAddrBytes;
++        status += OSPI_writeCmd(obj->ospiHandle , &wrParams);
+     }
+ 
+-    if(obj->phyEnable)
+-    {
+-        OSPI_disablePhy(obj->ospiHandle);
+-    }
+     return status;
+ }
+ 
+-static int32_t Psram_ospiReset(Ram_Config *config)
++int32_t Psram_ospiReset(Psram_Config *config)
+ {
+     int32_t status = SystemP_SUCCESS;
+ 
+-    status = Psram_ospiWriteCmd(config, config->devConfig->cmdReset, 0, NULL, 0);
++    status = Psram_ospiWriteCmd(config, OSPI_PSRAM_APS6408_RESET_CMD, 0, NULL, 0);
+ 
+     return status;
+ }
+ 
+-static void Psram_ospiClose(Ram_Config *config)
++void Psram_ospiClose(Psram_Config *config)
+ {
+     return;
+-}
+\ No newline at end of file
++}
+diff --git a/source/board/ram/ospi/psram_ospi.h b/source/board/ram/ospi/psram_ospi.h
+index e3ec795..ff155d3 100644
+--- a/source/board/ram/ospi/psram_ospi.h
++++ b/source/board/ram/ospi/psram_ospi.h
+@@ -1,5 +1,5 @@
+ /*
+- *  Copyright (C) 2025 Texas Instruments Incorporated
++ *  Copyright (C) 2023 Texas Instruments Incorporated
+  *
+  *  Redistribution and use in source and binary forms, with or without
+  *  modification, are permitted provided that the following conditions
+@@ -33,173 +33,26 @@
+ #ifndef PSRAM_OSPI_H_
+ #define PSRAM_OSPI_H_
+ 
+-#ifdef __cplusplus
+-extern "C" {
+-#endif
+-#include <board/ram.h>
+ #include <drivers/ospi.h>
+-
+-#define OSPI_FLASH_ATTACK_VECTOR_SIZE       (128U)
+-
+-static uint8_t gOspiFlashAttackVector[OSPI_FLASH_ATTACK_VECTOR_SIZE] =
+-{
+- 0xFEU,   // 0b11111110 @ 0x00000400 1024 bytes
+- 0xFF,   // 0b11111111 @ 0x00000401 1025 bytes
+- // Even Aligned Victim bit: 0, vic time slice : 111110000, agr time slice : 000000011
+- 0x01,   // 0b00000001 @ 0x00000402 1026 bytes
+- 0x01,   // 0b00000001 @ 0x00000403 1027 bytes
+- 0x01,   // 0b00000001 @ 0x00000404 1028 bytes
+- 0x01,   // 0b00000001 @ 0x00000405 1029 bytes
+- 0x01,   // 0b00000001 @ 0x00000406 1030 bytes
+- 0x00,   // 0b00000000 @ 0x00000407 1031 bytes
+- 0x00,   // 0b00000000 @ 0x00000408 1032 bytes
+- 0xFE,   // 0b11111110 @ 0x00000409 1033 bytes
+- 0xFE,   // 0b11111110 @ 0x0000040A 1034 bytes
+- // Odd  Aligned Victim bit: 0, vic time slice : 111110000, agr time slice : 000000011
+- 0x01,   // 0b00000001 @ 0x0000040B 1035 bytes
+- 0x01,   // 0b00000001 @ 0x0000040C 1036 bytes
+- 0x01,   // 0b00000001 @ 0x0000040D 1037 bytes
+- 0x01,   // 0b00000001 @ 0x0000040E 1038 bytes
+- 0x00,   // 0b00000000 @ 0x0000040F 1039 bytes
+- 0x00,   // 0b00000000 @ 0x00000410 1040 bytes
+- 0xFE,   // 0b11111110 @ 0x00000411 1041 bytes
+- 0xFE,   // 0b11111110 @ 0x00000412 1042 bytes
+- 0x01,   // 0b00000001 @ 0x00000413 1043 bytes
+- // Even Aligned Victim bit: 0, vic time slice : 111110000, agr time slice : 111110011
+- 0xFF,   // 0b11111111 @ 0x00000414 1044 bytes
+- 0xFF,   // 0b11111111 @ 0x00000415 1045 bytes
+- 0xFF,   // 0b11111111 @ 0x00000416 1046 bytes
+- 0xFF,   // 0b11111111 @ 0x00000417 1047 bytes
+- 0xFF,   // 0b11111111 @ 0x00000418 1048 bytes
+- 0x00,   // 0b00000000 @ 0x00000419 1049 bytes
+- 0x00,   // 0b00000000 @ 0x0000041A 1050 bytes
+- 0xFE,   // 0b11111110 @ 0x0000041B 1051 bytes
+- 0xFE,   // 0b11111110 @ 0x0000041C 1052 bytes
+- // Odd  Aligned Victim bit: 0, vic time slice : 111110000, agr time slice : 111110011
+- 0xFF,   // 0b11111111 @ 0x0000041D 1053 bytes
+- 0xFF,   // 0b11111111 @ 0x0000041E 1054 bytes
+- 0xFF,   // 0b11111111 @ 0x0000041F 1055 bytes
+- 0xFF,   // 0b11111111 @ 0x00000420 1056 bytes
+- 0x00,   // 0b00000000 @ 0x00000421 1057 bytes
+- 0x00,   // 0b00000000 @ 0x00000422 1058 bytes
+- 0xFE,   // 0b11111110 @ 0x00000423 1059 bytes
+- 0xFE,   // 0b11111110 @ 0x00000424 1060 bytes
+- 0xFF,   // 0b11111111 @ 0x00000425 1061 bytes
+- // Even Aligned Victim bit: 0, vic time slice : 111110000, agr time slice : 000001011
+- 0x01,   // 0b00000001 @ 0x00000426 1062 bytes
+- 0x01,   // 0b00000001 @ 0x00000427 1063 bytes
+- 0x01,   // 0b00000001 @ 0x00000428 1064 bytes
+- 0x01,   // 0b00000001 @ 0x00000429 1065 bytes
+- 0x01,   // 0b00000001 @ 0x0000042A 1066 bytes
+- 0xFE,   // 0b11111110 @ 0x0000042B 1067 bytes
+- 0x00,   // 0b00000000 @ 0x0000042C 1068 bytes
+- 0xFE,   // 0b11111110 @ 0x0000042D 1069 bytes
+- 0xFE,   // 0b11111110 @ 0x0000042E 1070 bytes
+- // Odd  Aligned Victim bit: 0, vic time slice : 111110000, agr time slice : 000001011
+- 0x01,   // 0b00000001 @ 0x0000042F 1071 bytes
+- 0x01,   // 0b00000001 @ 0x00000430 1072 bytes
+- 0x01,   // 0b00000001 @ 0x00000431 1073 bytes
+- 0x01,   // 0b00000001 @ 0x00000432 1074 bytes
+- 0xFE,   // 0b11111110 @ 0x00000433 1075 bytes
+- 0x00,   // 0b00000000 @ 0x00000434 1076 bytes
+- 0xFE,   // 0b11111110 @ 0x00000435 1077 bytes
+- 0xFE,   // 0b11111110 @ 0x00000436 1078 bytes
+- 0x01,   // 0b00000001 @ 0x00000437 1079 bytes
+- // Even Aligned Victim bit: 0, vic time slice : 111110000, agr time slice : 111111011
+- 0xFF,   // 0b11111111 @ 0x00000438 1080 bytes
+- 0xFF,   // 0b11111111 @ 0x00000439 1081 bytes
+- 0xFF,   // 0b11111111 @ 0x0000043A 1082 bytes
+- 0xFF,   // 0b11111111 @ 0x0000043B 1083 bytes
+- 0xFF,   // 0b11111111 @ 0x0000043C 1084 bytes
+- 0xFE,   // 0b11111110 @ 0x0000043D 1085 bytes
+- 0x00,   // 0b00000000 @ 0x0000043E 1086 bytes
+- 0xFE,   // 0b11111110 @ 0x0000043F 1087 bytes
+- 0xFE,   // 0b11111110 @ 0x00000440 1088 bytes
+- // Odd  Aligned Victim bit: 0, vic time slice : 111110000, agr time slice : 111111011
+- 0xFF,   // 0b11111111 @ 0x00000441 1089 bytes
+- 0xFF,   // 0b11111111 @ 0x00000442 1090 bytes
+- 0xFF,   // 0b11111111 @ 0x00000443 1091 bytes
+- 0xFF,   // 0b11111111 @ 0x00000444 1092 bytes
+- 0xFE,   // 0b11111110 @ 0x00000445 1093 bytes
+- 0x00,   // 0b00000000 @ 0x00000446 1094 bytes
+- 0xFE,   // 0b11111110 @ 0x00000447 1095 bytes
+- 0xFE,   // 0b11111110 @ 0x00000448 1096 bytes
+- 0xFF,   // 0b11111111 @ 0x00000449 1097 bytes
+- // Even Aligned Victim bit: 0, vic time slice : 111110000, agr time slice : 000000111
+- 0x01,   // 0b00000001 @ 0x0000044A 1098 bytes
+- 0x01,   // 0b00000001 @ 0x0000044B 1099 bytes
+- 0x01,   // 0b00000001 @ 0x0000044C 1100 bytes
+- 0x01,   // 0b00000001 @ 0x0000044D 1101 bytes
+- 0x01,   // 0b00000001 @ 0x0000044E 1102 bytes
+- 0x00,   // 0b00000000 @ 0x0000044F 1103 bytes
+- 0xFE,   // 0b11111110 @ 0x00000450 1104 bytes
+- 0xFE,   // 0b11111110 @ 0x00000451 1105 bytes
+- 0xFE,   // 0b11111110 @ 0x00000452 1106 bytes
+- // Odd  Aligned Victim bit: 0, vic time slice : 111110000, agr time slice : 000000111
+- 0x01,   // 0b00000001 @ 0x00000453 1107 bytes
+- 0x01,   // 0b00000001 @ 0x00000454 1108 bytes
+- 0x01,   // 0b00000001 @ 0x00000455 1109 bytes
+- 0x01,   // 0b00000001 @ 0x00000456 1110 bytes
+- 0x00,   // 0b00000000 @ 0x00000457 1111 bytes
+- 0xFE,   // 0b11111110 @ 0x00000458 1112 bytes
+- 0xFE,   // 0b11111110 @ 0x00000459 1113 bytes
+- 0xFE,   // 0b11111110 @ 0x0000045A 1114 bytes
+- 0x01,   // 0b00000001 @ 0x0000045B 1115 bytes
+- // Even Aligned Victim bit: 0, vic time slice : 111110000, agr time slice : 111110111
+- 0xFF,   // 0b11111111 @ 0x0000045C 1116 bytes
+- 0xFF,   // 0b11111111 @ 0x0000045D 1117 bytes
+- 0xFF,   // 0b11111111 @ 0x0000045E 1118 bytes
+- 0xFF,   // 0b11111111 @ 0x0000045F 1119 bytes
+- 0xFF,   // 0b11111111 @ 0x00000460 1120 bytes
+- 0x00,   // 0b00000000 @ 0x00000461 1121 bytes
+- 0xFE,   // 0b11111110 @ 0x00000462 1122 bytes
+- 0xFE,   // 0b11111110 @ 0x00000463 1123 bytes
+- 0xFE,   // 0b11111110 @ 0x00000464 1124 bytes
+- // Odd  Aligned Victim bit: 0, vic time slice : 111110000, agr time slice : 111110111
+- 0xFF,   // 0b11111111 @ 0x00000465 1125 bytes
+- 0xFF,   // 0b11111111 @ 0x00000466 1126 bytes
+- 0xFF,   // 0b11111111 @ 0x00000467 1127 bytes
+- 0xFF,   // 0b11111111 @ 0x00000468 1128 bytes
+- 0x00,   // 0b00000000 @ 0x00000469 1129 bytes
+- 0xFE,   // 0b11111110 @ 0x0000046A 1130 bytes
+- 0xFE,   // 0b11111110 @ 0x0000046B 1131 bytes
+- 0xFE,   // 0b11111110 @ 0x0000046C 1132 bytes
+- 0xFF,   // 0b11111111 @ 0x0000046D 1133 bytes
+- // Even Aligned Victim bit: 0, vic time slice : 111110000, agr time slice : 000001111
+- 0x01,   // 0b00000001 @ 0x0000046E 1134 bytes
+- 0x01,   // 0b00000001 @ 0x0000046F 1135 bytes
+- 0x01,   // 0b00000001 @ 0x00000470 1136 bytes
+- 0x01,   // 0b00000001 @ 0x00000471 1137 bytes
+- 0x01,   // 0b00000001 @ 0x00000472 1138 bytes
+- 0xFE,   // 0b11111110 @ 0x00000473 1139 bytes
+- 0xFE,   // 0b11111110 @ 0x00000474 1140 bytes
+- 0xFE,   // 0b11111110 @ 0x00000475 1141 bytes
+- 0xFE,   // 0b11111110 @ 0x00000476 1142 bytes
+- // Odd  Aligned Victim bit: 0, vic time slice : 111110000, agr time slice : 000001111
+- 0x01,   // 0b00000001 @ 0x00000477 1143 bytes
+- 0x01,   // 0b00000001 @ 0x00000478 1144 bytes
+- 0x01,   // 0b00000001 @ 0x00000479 1145 bytes
+- 0x01,   // 0b00000001 @ 0x0000047A 1146 bytes
+- 0xFE,   // 0b11111110 @ 0x0000047B 1147 bytes
+- 0xFE,   // 0b11111110 @ 0x0000047C 1148 bytes
+- 0xFE,   // 0b11111110 @ 0x0000047D 1149 bytes
+- 0xFE,   // 0b11111110 @ 0x0000047E 1150 bytes
+- 0x01    // 0b00000001 @ 0x0000047F 1151 bytes
+-};
++#include <board/psram.h>
+ 
+ typedef struct {
+     OSPI_Handle ospiHandle;
+     uint8_t dacEnable;
+     uint8_t phyEnable;
+     uint8_t numAddrBytes;
+-    uint8_t badBlockCheck;
+-} Ram_OspiPsramObject;
++} Psram_OspiObject;
+ 
+ /* PSRAM specific externs */
+-extern Ram_Fxns gPsramOspiFxns;
+-
+-#ifdef __cplusplus
+-}
+-#endif
+-
+-#endif /* PSRAM_XSPI_H_ */
+\ No newline at end of file
++extern Psram_Fxns gPsramOspiFxns;
++
++int32_t Psram_ospiOpen(Psram_Config *config);
++int32_t Psram_ospiRead(Psram_Config *config, uint32_t offset, uint8_t *pbuf, uint32_t len);
++int32_t Psram_ospiWrite(Psram_Config *config, uint32_t offset, uint8_t *pbuf, uint32_t len);
++void Psram_ospiClose(Psram_Config *config);
++int32_t Psram_ospiReadCmd(Psram_Config *config, uint8_t cmd, uint32_t readAddr, uint8_t dummyBits, uint8_t numAddrBytes, uint8_t *rxBuf, uint32_t rxLen);
++int32_t Psram_ospiReadId(Psram_Config *config, uint32_t *manufacturerId, uint32_t *deviceId);
++int32_t Psram_ospiReset(Psram_Config *config);
++int32_t Psram_ospiWriteCmd(Psram_Config *config, uint8_t cmd, uint32_t writeAddr, uint8_t *txBuf, uint32_t txLen);
++
++#endif /* PSRAM_OSPI_H_ */
+\ No newline at end of file
+diff --git a/source/board/ram/psram.c b/source/board/ram/psram.c
+new file mode 100644
+index 0000000..2d3318f
+--- /dev/null
++++ b/source/board/ram/psram.c
+@@ -0,0 +1,105 @@
++/*
++ *  Copyright (C) 2021-2023 Texas Instruments Incorporated
++ *
++ *  Redistribution and use in source and binary forms, with or without
++ *  modification, are permitted provided that the following conditions
++ *  are met:
++ *
++ *    Redistributions of source code must retain the above copyright
++ *    notice, this list of conditions and the following disclaimer.
++ *
++ *    Redistributions in binary form must reproduce the above copyright
++ *    notice, this list of conditions and the following disclaimer in the
++ *    documentation and/or other materials provided with the
++ *    distribution.
++ *
++ *    Neither the name of Texas Instruments Incorporated nor the names of
++ *    its contributors may be used to endorse or promote products derived
++ *    from this software without specific prior written permission.
++ *
++ *  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
++ *  "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
++ *  LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
++ *  A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
++ *  OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++ *  SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
++ *  LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
++ *  DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
++ *  THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++ *  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++ *  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++ */
++
++#include <board/psram.h>
++#include <stddef.h>
++
++extern Psram_Config gPsramConfig[];
++extern uint32_t gPsramConfigNum;
++
++Psram_Attrs *Psram_getAttrs(uint32_t instanceId)
++{
++    Psram_Attrs *attrs = NULL;
++    Psram_Config *config = NULL;
++
++    if(instanceId < gPsramConfigNum)
++    {
++        config = &gPsramConfig[instanceId];
++        attrs = config->attrs;
++    }
++    return attrs;
++}
++
++Psram_Handle Psram_open(uint32_t instanceId, Psram_Params *params)
++{
++    Psram_Config *config = NULL;
++
++    if(instanceId < gPsramConfigNum)
++    {
++        config = &gPsramConfig[instanceId];
++        if(config->fxns && config->fxns->openFxn)
++        {
++            int32_t status;
++
++            status = config->fxns->openFxn(config);
++            if(status != SystemP_SUCCESS)
++            {
++                config = NULL;
++            }
++        }
++    }
++    return config;
++}
++
++int32_t Psram_write(Psram_Handle handle, uint32_t offset, uint8_t *buf, uint32_t len)
++{
++    Psram_Config *config = (Psram_Config*)handle;
++    int32_t status = SystemP_FAILURE;
++
++    if(config && config->fxns && config->fxns->writeFxn)
++    {
++        status = config->fxns->writeFxn(config, offset, buf, len);
++    }
++    return status;
++}
++
++int32_t Psram_read(Psram_Handle handle, uint32_t offset, uint8_t *buf, uint32_t len)
++{
++    Psram_Config *config = (Psram_Config*)handle;
++    int32_t status = SystemP_FAILURE;
++
++    if(config && config->fxns && config->fxns->readFxn)
++    {
++        status = config->fxns->readFxn(config, offset, buf, len);
++    }
++    return status;
++}
++
++void Psram_close(Psram_Handle handle)
++{
++    Psram_Config *config = (Psram_Config*)handle;
++
++    if(config && config->fxns && config->fxns->closeFxn)
++    {
++        config->fxns->closeFxn(config);
++    }
++}
+-- 
+2.34.1
+
