@@ -1,0 +1,1512 @@
+From f3bbc063bb5c6ddc1b05eb74df229f601e6df1fe Mon Sep 17 00:00:00 2001
+From: Kamlesh Gurudasani <kamlesh@ti.com>
+Date: Thu, 15 Oct 2026 15:41:37 +0530
+Subject: [PATCH 4/5] ta: pkcs11: implement ML-DSA and ML-KEM processing
+
+Add the processing side of the PKCS#11 v3.2 post-quantum mechanisms.
+There is no GlobalPlatform TEE Internal Core API algorithm for ML-DSA or
+ML-KEM, so no TEE_OperationHandle or TEE_ObjectHandle is used: the key
+material is kept as byte blobs in the object attributes and the
+mldsa-native/mlkem-native libraries are called directly.
+
+processing_pqc.c (new) implements, for all three parameter sets of each
+algorithm, selected per key via CKA_PARAMETER_SET:
+
+- ML-DSA-44/65/87: key pair generation, C_Sign() and C_Verify()
+- ML-KEM-512/768/1024: key pair generation, C_EncapsulateKey() and
+  C_DecapsulateKey()
+
+processing.c hooks these into the generic paths, under
+CFG_PKCS11_TA_ML_DSA / CFG_PKCS11_TA_ML_KEM: key pair generation, sign
+and verify operation setup/step, and the new entry_encapsulate_key() and
+entry_decapsulate_key() commands. processing.h declares the new
+functions.
+
+pkcs11_attributes.c/h gain what the above needs:
+
+- PKCS11_FUNCTION_ENCAPSULATE and PKCS11_FUNCTION_DECAPSULATE, mapped to
+  the matching mechanism flags and to the CKA_ENCAPSULATE and
+  CKA_DECAPSULATE key usage attributes.
+- Attribute templates for ML-DSA and ML-KEM public and private keys.
+  CKA_PARAMETER_SET is mandatory on the public key template and
+  optional on the private one.
+- Mechanism/key-type consistency checks for CKM_ML_DSA and CKM_ML_KEM.
+
+ta/pkcs11/src/sub.mk builds processing_pqc.c. Its contents are compiled
+out unless CFG_PKCS11_TA_ML_DSA / CFG_PKCS11_TA_ML_KEM are set, which is
+done in the next patch.
+
+Signed-off-by: Kamlesh Gurudasani <kamlesh@ti.com>
+---
+ ta/pkcs11/src/pkcs11_attributes.c | 188 +++++++-
+ ta/pkcs11/src/pkcs11_attributes.h |   2 +
+ ta/pkcs11/src/processing.c        | 314 +++++++++++++
+ ta/pkcs11/src/processing.h        |  35 ++
+ ta/pkcs11/src/processing_pqc.c    | 730 ++++++++++++++++++++++++++++++
+ ta/pkcs11/src/sub.mk              |   1 +
+ 6 files changed, 1269 insertions(+), 1 deletion(-)
+ create mode 100644 ta/pkcs11/src/processing_pqc.c
+
+diff --git a/ta/pkcs11/src/pkcs11_attributes.c b/ta/pkcs11/src/pkcs11_attributes.c
+index 2c6750a26..7d3842407 100644
+--- a/ta/pkcs11/src/pkcs11_attributes.c
++++ b/ta/pkcs11/src/pkcs11_attributes.c
+@@ -41,6 +41,10 @@ static uint32_t pkcs11_func2ckfm(enum processing_func function)
+ 		return PKCS11_CKFM_WRAP;
+ 	case PKCS11_FUNCTION_UNWRAP:
+ 		return PKCS11_CKFM_UNWRAP;
++	case PKCS11_FUNCTION_ENCAPSULATE:
++		return PKCS11_CKFM_ENCAPSULATE;
++	case PKCS11_FUNCTION_DECAPSULATE:
++		return PKCS11_CKFM_DECAPSULATE;
+ 	case PKCS11_FUNCTION_ENCRYPT:
+ 		return PKCS11_CKFM_ENCRYPT;
+ 	case PKCS11_FUNCTION_DECRYPT:
+@@ -182,6 +186,8 @@ static uint8_t *pkcs11_object_default_boolprop(uint32_t attribute)
+ 	case PKCS11_CKA_UNWRAP:
+ 	case PKCS11_CKA_EXTRACTABLE:
+ 	case PKCS11_CKA_TRUSTED:
++	case PKCS11_CKA_ENCAPSULATE:
++	case PKCS11_CKA_DECAPSULATE:
+ 		return (uint8_t *)&bool_false;
+ 	default:
+ 		DMSG("No default for boolprop attribute %#"PRIx32, attribute);
+@@ -488,6 +494,67 @@ static const uint32_t eddsa_private_key_opt_or_null[] = {
+ 	PKCS11_CKA_EC_POINT,
+ };
+ 
++/*
++ * PKCS#11 v3.2 specification for ML-DSA keys (+public/private_key_xxx).
++ * CKA_PARAMETER_SET is only mandatory on the public key template: per spec,
++ * "the mechanism generates ML-DSA public/private key pairs with a parameter
++ * set, as specified in the CKA_PARAMETER_SET attribute of the template for
++ * the public key" - the private key template is not required to repeat it
++ * for C_GenerateKeyPair (unlike C_CreateObject/import, where the spec notes
++ * tokens may reject templates that only specify one of the two). Real-world
++ * clients (e.g. OpenSSL's pkcs11-provider) rely on this and only set it on
++ * the public template.
++ */
++static const uint32_t mldsa_key_mandated[] = {
++	PKCS11_CKA_PARAMETER_SET,
++};
++
++static const uint32_t mldsa_public_key_opt_or_null[] = {
++	PKCS11_CKA_VALUE,
++};
++
++static const uint32_t mldsa_private_key_mandated[] = {
++};
++
++static const uint32_t mldsa_private_key_opt_or_null[] = {
++	PKCS11_CKA_VALUE,
++	PKCS11_CKA_SEED,
++	PKCS11_CKA_PARAMETER_SET,
++};
++
++/*
++ * PKCS#11 v3.2 specification for ML-KEM keys (+public/private_key_xxx).
++ * CKA_PARAMETER_SET is only mandatory on the public key template for
++ * C_GenerateKeyPair - see the comment on mldsa_key_mandated above, the same
++ * convention applies here.
++ */
++static const uint32_t mlkem_key_mandated[] = {
++	PKCS11_CKA_PARAMETER_SET,
++};
++
++static const uint32_t mlkem_private_key_mandated[] = {
++};
++
++static const uint32_t mlkem_public_key_boolprops[] = {
++	PKCS11_CKA_ENCAPSULATE,
++};
++
++static const uint32_t mlkem_public_key_opt_or_null[] = {
++	PKCS11_CKA_VALUE,
++	PKCS11_CKA_ENCAPSULATE_TEMPLATE,
++};
++
++static const uint32_t mlkem_private_key_boolprops[] = {
++	PKCS11_CKA_DECAPSULATE,
++};
++
++static const uint32_t mlkem_private_key_opt_or_null[] = {
++	PKCS11_CKA_VALUE,
++	PKCS11_CKA_SEED,
++	PKCS11_CKA_DECAPSULATE_TEMPLATE,
++	PKCS11_CKA_PARAMETER_SET,
++};
++
+ static enum pkcs11_rc create_storage_attributes(struct obj_attrs **out,
+ 						struct obj_attrs *temp)
+ {
+@@ -791,6 +858,24 @@ static enum pkcs11_rc create_pub_key_attributes(struct obj_attrs **out,
+ 		mandated_count = ARRAY_SIZE(ec_public_key_mandated);
+ 		oon_count = ARRAY_SIZE(ec_public_key_opt_or_null);
+ 		break;
++	case PKCS11_CKK_ML_DSA:
++		mandated = mldsa_key_mandated;
++		oon = mldsa_public_key_opt_or_null;
++		mandated_count = ARRAY_SIZE(mldsa_key_mandated);
++		oon_count = ARRAY_SIZE(mldsa_public_key_opt_or_null);
++		break;
++	case PKCS11_CKK_ML_KEM:
++		rc = set_mandatory_boolprops(out, temp,
++					     mlkem_public_key_boolprops,
++					     ARRAY_SIZE(mlkem_public_key_boolprops));
++		if (rc)
++			return rc;
++
++		mandated = mlkem_key_mandated;
++		oon = mlkem_public_key_opt_or_null;
++		mandated_count = ARRAY_SIZE(mlkem_key_mandated);
++		oon_count = ARRAY_SIZE(mlkem_public_key_opt_or_null);
++		break;
+ 	default:
+ 		EMSG("Invalid key type %#"PRIx32"/%s",
+ 		     get_key_type(*out), id2str_key_type(get_key_type(*out)));
+@@ -900,6 +985,24 @@ static enum pkcs11_rc create_priv_key_attributes(struct obj_attrs **out,
+ 		mandated_count = ARRAY_SIZE(ec_private_key_mandated);
+ 		oon_count = ARRAY_SIZE(eddsa_private_key_opt_or_null);
+ 		break;
++	case PKCS11_CKK_ML_DSA:
++		mandated = mldsa_private_key_mandated;
++		oon = mldsa_private_key_opt_or_null;
++		mandated_count = ARRAY_SIZE(mldsa_private_key_mandated);
++		oon_count = ARRAY_SIZE(mldsa_private_key_opt_or_null);
++		break;
++	case PKCS11_CKK_ML_KEM:
++		rc = set_mandatory_boolprops(out, temp,
++					     mlkem_private_key_boolprops,
++					     ARRAY_SIZE(mlkem_private_key_boolprops));
++		if (rc)
++			return rc;
++
++		mandated = mlkem_private_key_mandated;
++		oon = mlkem_private_key_opt_or_null;
++		mandated_count = ARRAY_SIZE(mlkem_private_key_mandated);
++		oon_count = ARRAY_SIZE(mlkem_private_key_opt_or_null);
++		break;
+ 	default:
+ 		EMSG("Invalid key type %#"PRIx32"/%s",
+ 		     get_key_type(*out), id2str_key_type(get_key_type(*out)));
+@@ -1253,6 +1356,14 @@ create_attributes_from_template(struct obj_attrs **out, void *template,
+ 			class = template_class;
+ 			type = PKCS11_CKK_RSA;
+ 			break;
++		case PKCS11_CKM_ML_DSA_KEY_PAIR_GEN:
++			class = template_class;
++			type = PKCS11_CKK_ML_DSA;
++			break;
++		case PKCS11_CKM_ML_KEM_KEY_PAIR_GEN:
++			class = template_class;
++			type = PKCS11_CKK_ML_KEM;
++			break;
+ 		default:
+ 			TEE_Panic(TEE_ERROR_NOT_SUPPORTED);
+ 		}
+@@ -1338,6 +1449,22 @@ create_attributes_from_template(struct obj_attrs **out, void *template,
+ 			goto out;
+ 		}
+ 		break;
++	case PKCS11_CKM_ML_DSA_KEY_PAIR_GEN:
++		if ((get_class(temp) != PKCS11_CKO_PUBLIC_KEY &&
++		     get_class(temp) != PKCS11_CKO_PRIVATE_KEY) ||
++		    get_key_type(temp) != PKCS11_CKK_ML_DSA) {
++			rc = PKCS11_CKR_TEMPLATE_INCONSISTENT;
++			goto out;
++		}
++		break;
++	case PKCS11_CKM_ML_KEM_KEY_PAIR_GEN:
++		if ((get_class(temp) != PKCS11_CKO_PUBLIC_KEY &&
++		     get_class(temp) != PKCS11_CKO_PRIVATE_KEY) ||
++		    get_key_type(temp) != PKCS11_CKK_ML_KEM) {
++			rc = PKCS11_CKR_TEMPLATE_INCONSISTENT;
++			goto out;
++		}
++		break;
+ 	default:
+ 		break;
+ 	}
+@@ -1659,6 +1786,7 @@ check_created_attrs_against_processing(uint32_t proc_id,
+ 	case PKCS11_CKM_AES_ECB_ENCRYPT_DATA:
+ 	case PKCS11_CKM_AES_CBC_ENCRYPT_DATA:
+ 	case PKCS11_CKM_RSA_AES_KEY_WRAP:
++	case PKCS11_CKM_ML_KEM:
+ 		assert(check_attr_bval(proc_id, head, PKCS11_CKA_LOCAL, false));
+ 		break;
+ 	case PKCS11_CKM_GENERIC_SECRET_KEY_GEN:
+@@ -1666,6 +1794,8 @@ check_created_attrs_against_processing(uint32_t proc_id,
+ 	case PKCS11_CKM_EC_EDWARDS_KEY_PAIR_GEN:
+ 	case PKCS11_CKM_EC_KEY_PAIR_GEN:
+ 	case PKCS11_CKM_RSA_PKCS_KEY_PAIR_GEN:
++	case PKCS11_CKM_ML_DSA_KEY_PAIR_GEN:
++	case PKCS11_CKM_ML_KEM_KEY_PAIR_GEN:
+ 		assert(check_attr_bval(proc_id, head, PKCS11_CKA_LOCAL, true));
+ 		break;
+ 	default:
+@@ -1689,8 +1819,15 @@ check_created_attrs_against_processing(uint32_t proc_id,
+ 	case PKCS11_CKM_RSA_PKCS_KEY_PAIR_GEN:
+ 		assert(get_key_type(head) == PKCS11_CKK_RSA);
+ 		break;
++	case PKCS11_CKM_ML_DSA_KEY_PAIR_GEN:
++		assert(get_key_type(head) == PKCS11_CKK_ML_DSA);
++		break;
++	case PKCS11_CKM_ML_KEM_KEY_PAIR_GEN:
++		assert(get_key_type(head) == PKCS11_CKK_ML_KEM);
++		break;
+ 	case PKCS11_PROCESSING_IMPORT:
+ 	case PKCS11_CKM_ECDH1_DERIVE:
++	case PKCS11_CKM_ML_KEM:
+ 	default:
+ 		break;
+ 	}
+@@ -1739,6 +1876,12 @@ static void get_key_min_max_sizes(enum pkcs11_key_type key_type,
+ 	case PKCS11_CKK_RSA:
+ 		mechanism = PKCS11_CKM_RSA_PKCS_KEY_PAIR_GEN;
+ 		break;
++	case PKCS11_CKK_ML_DSA:
++		mechanism = PKCS11_CKM_ML_DSA_KEY_PAIR_GEN;
++		break;
++	case PKCS11_CKK_ML_KEM:
++		mechanism = PKCS11_CKM_ML_KEM_KEY_PAIR_GEN;
++		break;
+ 	default:
+ 		TEE_Panic(key_type);
+ 		break;
+@@ -1828,6 +1971,8 @@ enum pkcs11_rc check_created_attrs(struct obj_attrs *key1,
+ 			break;
+ 		case PKCS11_CKK_EC:
+ 		case PKCS11_CKK_EC_EDWARDS:
++		case PKCS11_CKK_ML_DSA:
++		case PKCS11_CKK_ML_KEM:
+ 			break;
+ 		default:
+ 			return PKCS11_CKR_TEMPLATE_INCONSISTENT;
+@@ -1838,6 +1983,8 @@ enum pkcs11_rc check_created_attrs(struct obj_attrs *key1,
+ 		case PKCS11_CKK_RSA:
+ 		case PKCS11_CKK_EC:
+ 		case PKCS11_CKK_EC_EDWARDS:
++		case PKCS11_CKK_ML_DSA:
++		case PKCS11_CKK_ML_KEM:
+ 			break;
+ 		default:
+ 			return PKCS11_CKR_TEMPLATE_INCONSISTENT;
+@@ -1846,11 +1993,14 @@ enum pkcs11_rc check_created_attrs(struct obj_attrs *key1,
+ 
+ 	/*
+ 	 * Check key size for symmetric keys and RSA keys
+-	 * EC is bound to domains, no need to check here.
++	 * EC and ML-DSA/ML-KEM are bound to domains/parameter sets, no need
++	 * to check here.
+ 	 */
+ 	switch (get_key_type(key1)) {
+ 	case PKCS11_CKK_EC:
+ 	case PKCS11_CKK_EC_EDWARDS:
++	case PKCS11_CKK_ML_DSA:
++	case PKCS11_CKK_ML_KEM:
+ 		return PKCS11_CKR_OK;
+ 	default:
+ 		break;
+@@ -1920,6 +2070,10 @@ static enum pkcs11_attr_id func_to_attr(enum processing_func func)
+ 		return PKCS11_CKA_UNWRAP;
+ 	case PKCS11_FUNCTION_DERIVE:
+ 		return PKCS11_CKA_DERIVE;
++	case PKCS11_FUNCTION_ENCAPSULATE:
++		return PKCS11_CKA_ENCAPSULATE;
++	case PKCS11_FUNCTION_DECAPSULATE:
++		return PKCS11_CKA_DECAPSULATE;
+ 	default:
+ 		return PKCS11_CKA_UNDEFINED_ID;
+ 	}
+@@ -2034,6 +2188,38 @@ check_parent_attrs_against_processing(enum pkcs11_mechanism_id proc_id,
+ 		}
+ 		break;
+ 
++	case PKCS11_CKM_ML_KEM:
++		if (key_type != PKCS11_CKK_ML_KEM) {
++			EMSG("Invalid key %s for mechanism %s",
++			     id2str_type(key_type, key_class),
++			     id2str_proc(proc_id));
++			return PKCS11_CKR_KEY_TYPE_INCONSISTENT;
++		}
++		if (key_class != PKCS11_CKO_PUBLIC_KEY &&
++		    key_class != PKCS11_CKO_PRIVATE_KEY) {
++			EMSG("Invalid key class for mechanism %s",
++			     id2str_proc(proc_id));
++
++			return PKCS11_CKR_KEY_FUNCTION_NOT_PERMITTED;
++		}
++		break;
++
++	case PKCS11_CKM_ML_DSA:
++		if (key_type != PKCS11_CKK_ML_DSA) {
++			EMSG("Invalid key %s for mechanism %s",
++			     id2str_type(key_type, key_class),
++			     id2str_proc(proc_id));
++			return PKCS11_CKR_KEY_TYPE_INCONSISTENT;
++		}
++		if (key_class != PKCS11_CKO_PUBLIC_KEY &&
++		    key_class != PKCS11_CKO_PRIVATE_KEY) {
++			EMSG("Invalid key class for mechanism %s",
++			     id2str_proc(proc_id));
++
++			return PKCS11_CKR_KEY_FUNCTION_NOT_PERMITTED;
++		}
++		break;
++
+ 	case PKCS11_CKM_EDDSA:
+ 		if (key_type != PKCS11_CKK_EC_EDWARDS) {
+ 			EMSG("Invalid key %s for mechanism %s",
+diff --git a/ta/pkcs11/src/pkcs11_attributes.h b/ta/pkcs11/src/pkcs11_attributes.h
+index 60cff66e7..b0dbc0ce0 100644
+--- a/ta/pkcs11/src/pkcs11_attributes.h
++++ b/ta/pkcs11/src/pkcs11_attributes.h
+@@ -110,6 +110,8 @@ enum processing_func {
+ 	PKCS11_FUNCTION_COPY,
+ 	PKCS11_FUNCTION_MODIFY,
+ 	PKCS11_FUNCTION_DESTROY,
++	PKCS11_FUNCTION_ENCAPSULATE,
++	PKCS11_FUNCTION_DECAPSULATE,
+ 	PKCS11_FUNCTION_UNKNOWN,
+ };
+ 
+diff --git a/ta/pkcs11/src/processing.c b/ta/pkcs11/src/processing.c
+index 6ce078dca..fba5532ea 100644
+--- a/ta/pkcs11/src/processing.c
++++ b/ta/pkcs11/src/processing.c
+@@ -528,6 +528,16 @@ enum pkcs11_rc entry_generate_key_pair(struct pkcs11_client *client,
+ 	case PKCS11_CKM_RSA_PKCS_KEY_PAIR_GEN:
+ 		rc = generate_rsa_keys(proc_params, &pub_head, &priv_head);
+ 		break;
++#ifdef CFG_PKCS11_TA_ML_DSA
++	case PKCS11_CKM_ML_DSA_KEY_PAIR_GEN:
++		rc = generate_mldsa_keys(proc_params, &pub_head, &priv_head);
++		break;
++#endif
++#ifdef CFG_PKCS11_TA_ML_KEM
++	case PKCS11_CKM_ML_KEM_KEY_PAIR_GEN:
++		rc = generate_mlkem_keys(proc_params, &pub_head, &priv_head);
++		break;
++#endif
+ 	default:
+ 		rc = PKCS11_CKR_MECHANISM_INVALID;
+ 		break;
+@@ -675,6 +685,8 @@ enum pkcs11_rc entry_processing_init(struct pkcs11_client *client,
+ 		rc = init_asymm_operation(session, function, proc_params, obj);
+ 	else if (processing_is_tee_digest(proc_params->id))
+ 		rc = init_digest_operation(session, proc_params);
++	else if (processing_is_tee_pqc(proc_params->id))
++		rc = init_pqc_operation(session, function, proc_params, obj);
+ 	else
+ 		rc = PKCS11_CKR_MECHANISM_INVALID;
+ 
+@@ -771,6 +783,9 @@ enum pkcs11_rc entry_processing_step(struct pkcs11_client *client,
+ 					  ptypes, params);
+ 	else if (processing_is_tee_digest(mecha_type))
+ 		rc = step_digest_operation(session, step, obj, ptypes, params);
++	else if (processing_is_tee_pqc(mecha_type))
++		rc = step_pqc_operation(session, function, step,
++					ptypes, params);
+ 	else
+ 		rc = PKCS11_CKR_MECHANISM_INVALID;
+ 
+@@ -1295,3 +1310,302 @@ out_free:
+ 	TEE_Free(proc_params);
+ 	return rc;
+ }
++
++/*
++ * entry_encapsulate_key - Encapsulate a key, creating a new secret key
++ *                          object from the generated shared secret.
++ *
++ * There is no active_processing/session state involved (unlike sign/verify):
++ * the whole operation completes synchronously in a single command, the same
++ * way entry_generate_key_pair() does.
++ */
++enum pkcs11_rc entry_encapsulate_key(struct pkcs11_client *client,
++				     uint32_t ptypes, TEE_Param *params)
++{
++	const uint32_t exp_pt = TEE_PARAM_TYPES(TEE_PARAM_TYPE_MEMREF_INOUT,
++						TEE_PARAM_TYPE_NONE,
++						TEE_PARAM_TYPE_MEMREF_OUTPUT,
++						TEE_PARAM_TYPE_NONE);
++	TEE_Param *ctrl = params;
++	TEE_Param *out = params + 2;
++	enum pkcs11_rc rc = PKCS11_CKR_GENERAL_ERROR;
++	struct serialargs ctrlargs = { };
++	struct pkcs11_session *session = NULL;
++	struct pkcs11_attribute_head *proc_params = NULL;
++	struct pkcs11_object_head *template = NULL;
++	struct pkcs11_object *pub_key = NULL;
++	struct obj_attrs *head = NULL;
++	size_t template_size = 0;
++	uint32_t pub_key_handle = 0;
++	uint32_t obj_handle = 0;
++	uint8_t shared_secret[32] = { };
++	const uint32_t out_hdr_size = sizeof(obj_handle);
++	uint32_t out_buf_size = out->memref.size;
++	size_t ct_size = 0;
++	void *ct_buf = NULL;
++
++	if (!client || ptypes != exp_pt)
++		return PKCS11_CKR_ARGUMENTS_BAD;
++
++	if (out_buf_size > out_hdr_size) {
++		ct_size = out_buf_size - out_hdr_size;
++		ct_buf = (uint8_t *)out->memref.buffer + out_hdr_size;
++	}
++
++	serialargs_init(&ctrlargs, ctrl->memref.buffer, ctrl->memref.size);
++
++	rc = serialargs_get_session_from_handle(&ctrlargs, client, &session);
++	if (rc)
++		return rc;
++
++	rc = serialargs_get(&ctrlargs, &pub_key_handle, sizeof(uint32_t));
++	if (rc)
++		return rc;
++
++	rc = serialargs_alloc_get_one_attribute(&ctrlargs, &proc_params);
++	if (rc)
++		return rc;
++
++	rc = serialargs_alloc_get_attributes(&ctrlargs, &template);
++	if (rc)
++		goto out_free;
++
++	if (serialargs_remaining_bytes(&ctrlargs)) {
++		rc = PKCS11_CKR_ARGUMENTS_BAD;
++		goto out_free;
++	}
++
++	rc = get_ready_session(session);
++	if (rc)
++		goto out_free;
++
++	pub_key = pkcs11_handle2object(pub_key_handle, session);
++	if (!pub_key) {
++		rc = PKCS11_CKR_KEY_HANDLE_INVALID;
++		goto out_free;
++	}
++
++	rc = check_mechanism_against_processing(session, proc_params->id,
++						PKCS11_FUNCTION_ENCAPSULATE,
++						PKCS11_FUNC_STEP_INIT);
++	if (rc)
++		goto out_free;
++
++	rc = check_parent_attrs_against_processing(proc_params->id,
++						   PKCS11_FUNCTION_ENCAPSULATE,
++						   pub_key->attributes);
++	if (rc)
++		goto out_free;
++
++	rc = check_access_attrs_against_token(session, pub_key->attributes);
++	if (rc)
++		goto out_free;
++
++	template_size = sizeof(*template) + template->attrs_size;
++
++	rc = create_attributes_from_template(&head, template, template_size,
++					     pub_key->attributes,
++					     PKCS11_FUNCTION_DERIVE,
++					     proc_params->id,
++					     PKCS11_CKO_UNDEFINED_ID);
++	if (rc)
++		goto out_free;
++
++	TEE_Free(template);
++	template = NULL;
++
++	rc = check_created_attrs_against_processing(proc_params->id, head);
++	if (rc)
++		goto out;
++
++	rc = check_created_attrs_against_token(session, head);
++	if (rc)
++		goto out;
++
++	switch (proc_params->id) {
++#ifdef CFG_PKCS11_TA_ML_KEM
++	case PKCS11_CKM_ML_KEM:
++		rc = do_mlkem_encapsulate(pub_key, ct_buf, &ct_size,
++					  shared_secret);
++		break;
++#endif
++	default:
++		rc = PKCS11_CKR_MECHANISM_INVALID;
++		break;
++	}
++
++	if (rc == PKCS11_CKR_BUFFER_TOO_SMALL) {
++		out->memref.size = out_hdr_size + ct_size;
++		goto out;
++	}
++	if (rc)
++		goto out;
++
++	rc = set_key_data(&head, shared_secret, sizeof(shared_secret));
++	if (rc)
++		goto out;
++
++	rc = create_object(session, head, &obj_handle);
++	if (rc)
++		goto out;
++
++	/* Ownership transferred to the object store */
++	head = NULL;
++
++	TEE_MemMove(out->memref.buffer, &obj_handle, sizeof(obj_handle));
++	out->memref.size = out_hdr_size + ct_size;
++
++	DMSG("PKCS11 session %"PRIu32": encapsulate key %#"PRIx32,
++	     session->handle, obj_handle);
++
++out:
++	TEE_MemFill(shared_secret, 0, sizeof(shared_secret));
++	TEE_Free(head);
++out_free:
++	TEE_Free(template);
++	TEE_Free(proc_params);
++
++	return rc;
++}
++
++/*
++ * entry_decapsulate_key - Decapsulate a ciphertext, creating a new secret
++ *                          key object from the recovered shared secret.
++ */
++enum pkcs11_rc entry_decapsulate_key(struct pkcs11_client *client,
++				     uint32_t ptypes, TEE_Param *params)
++{
++	const uint32_t exp_pt = TEE_PARAM_TYPES(TEE_PARAM_TYPE_MEMREF_INOUT,
++						TEE_PARAM_TYPE_MEMREF_INPUT,
++						TEE_PARAM_TYPE_MEMREF_OUTPUT,
++						TEE_PARAM_TYPE_NONE);
++	TEE_Param *ctrl = params;
++	TEE_Param *out = params + 2;
++	enum pkcs11_rc rc = PKCS11_CKR_GENERAL_ERROR;
++	struct serialargs ctrlargs = { };
++	struct pkcs11_session *session = NULL;
++	struct pkcs11_attribute_head *proc_params = NULL;
++	struct pkcs11_object_head *template = NULL;
++	struct pkcs11_object *priv_key = NULL;
++	struct obj_attrs *head = NULL;
++	size_t template_size = 0;
++	uint32_t priv_key_handle = 0;
++	uint32_t obj_handle = 0;
++	uint8_t shared_secret[32] = { };
++	void *ct_buf = params[1].memref.buffer;
++	uint32_t ct_size = params[1].memref.size;
++
++	if (!client || ptypes != exp_pt ||
++	    out->memref.size != sizeof(obj_handle) || (ct_size && !ct_buf))
++		return PKCS11_CKR_ARGUMENTS_BAD;
++
++	serialargs_init(&ctrlargs, ctrl->memref.buffer, ctrl->memref.size);
++
++	rc = serialargs_get_session_from_handle(&ctrlargs, client, &session);
++	if (rc)
++		return rc;
++
++	rc = serialargs_get(&ctrlargs, &priv_key_handle, sizeof(uint32_t));
++	if (rc)
++		return rc;
++
++	rc = serialargs_alloc_get_one_attribute(&ctrlargs, &proc_params);
++	if (rc)
++		return rc;
++
++	rc = serialargs_alloc_get_attributes(&ctrlargs, &template);
++	if (rc)
++		goto out_free;
++
++	if (serialargs_remaining_bytes(&ctrlargs)) {
++		rc = PKCS11_CKR_ARGUMENTS_BAD;
++		goto out_free;
++	}
++
++	rc = get_ready_session(session);
++	if (rc)
++		goto out_free;
++
++	priv_key = pkcs11_handle2object(priv_key_handle, session);
++	if (!priv_key) {
++		rc = PKCS11_CKR_KEY_HANDLE_INVALID;
++		goto out_free;
++	}
++
++	rc = check_mechanism_against_processing(session, proc_params->id,
++						PKCS11_FUNCTION_DECAPSULATE,
++						PKCS11_FUNC_STEP_INIT);
++	if (rc)
++		goto out_free;
++
++	rc = check_parent_attrs_against_processing(proc_params->id,
++						   PKCS11_FUNCTION_DECAPSULATE,
++						   priv_key->attributes);
++	if (rc)
++		goto out_free;
++
++	rc = check_access_attrs_against_token(session, priv_key->attributes);
++	if (rc)
++		goto out_free;
++
++	template_size = sizeof(*template) + template->attrs_size;
++
++	rc = create_attributes_from_template(&head, template, template_size,
++					     priv_key->attributes,
++					     PKCS11_FUNCTION_DERIVE,
++					     proc_params->id,
++					     PKCS11_CKO_UNDEFINED_ID);
++	if (rc)
++		goto out_free;
++
++	TEE_Free(template);
++	template = NULL;
++
++	rc = check_created_attrs_against_processing(proc_params->id, head);
++	if (rc)
++		goto out;
++
++	rc = check_created_attrs_against_token(session, head);
++	if (rc)
++		goto out;
++
++	switch (proc_params->id) {
++#ifdef CFG_PKCS11_TA_ML_KEM
++	case PKCS11_CKM_ML_KEM:
++		rc = do_mlkem_decapsulate(priv_key, ct_buf, ct_size,
++					  shared_secret);
++		break;
++#endif
++	default:
++		rc = PKCS11_CKR_MECHANISM_INVALID;
++		break;
++	}
++	if (rc)
++		goto out;
++
++	rc = set_key_data(&head, shared_secret, sizeof(shared_secret));
++	if (rc)
++		goto out;
++
++	rc = create_object(session, head, &obj_handle);
++	if (rc)
++		goto out;
++
++	/* Ownership transferred to the object store */
++	head = NULL;
++
++	TEE_MemMove(out->memref.buffer, &obj_handle, sizeof(obj_handle));
++	out->memref.size = sizeof(obj_handle);
++
++	DMSG("PKCS11 session %"PRIu32": decapsulate key %#"PRIx32,
++	     session->handle, obj_handle);
++
++out:
++	TEE_MemFill(shared_secret, 0, sizeof(shared_secret));
++	TEE_Free(head);
++out_free:
++	TEE_Free(template);
++	TEE_Free(proc_params);
++
++	return rc;
++}
+diff --git a/ta/pkcs11/src/processing.h b/ta/pkcs11/src/processing.h
+index ac6d0808a..9c7500daa 100644
+--- a/ta/pkcs11/src/processing.h
++++ b/ta/pkcs11/src/processing.h
+@@ -144,6 +144,41 @@ enum pkcs11_rc unwrap_key_by_asymm(struct pkcs11_session *session, void *data,
+ 				   uint32_t data_sz, void **out_buf,
+ 				   uint32_t *out_sz);
+ 
++/* Post-quantum (PKCS#11 v3.2) key operations util */
++bool processing_is_tee_pqc(uint32_t proc_id);
++
++enum pkcs11_rc generate_mldsa_keys(struct pkcs11_attribute_head *proc_params,
++				   struct obj_attrs **pub_head,
++				   struct obj_attrs **priv_head);
++
++enum pkcs11_rc init_pqc_operation(struct pkcs11_session *session,
++				  enum processing_func function,
++				  struct pkcs11_attribute_head *proc_params,
++				  struct pkcs11_object *obj);
++
++enum pkcs11_rc step_pqc_operation(struct pkcs11_session *session,
++				  enum processing_func function,
++				  enum processing_step step,
++				  uint32_t ptypes, TEE_Param *params);
++
++enum pkcs11_rc generate_mlkem_keys(struct pkcs11_attribute_head *proc_params,
++				   struct obj_attrs **pub_head,
++				   struct obj_attrs **priv_head);
++
++enum pkcs11_rc do_mlkem_encapsulate(struct pkcs11_object *pub_obj,
++				    void *ct_buf, size_t *ct_size,
++				    uint8_t shared_secret[32]);
++
++enum pkcs11_rc do_mlkem_decapsulate(struct pkcs11_object *priv_obj,
++				    void *ct_buf, uint32_t ct_size,
++				    uint8_t shared_secret[32]);
++
++enum pkcs11_rc entry_encapsulate_key(struct pkcs11_client *client,
++				     uint32_t ptypes, TEE_Param *params);
++
++enum pkcs11_rc entry_decapsulate_key(struct pkcs11_client *client,
++				     uint32_t ptypes, TEE_Param *params);
++
+ /*
+  * Symmetric crypto algorithm specific functions
+  */
+diff --git a/ta/pkcs11/src/processing_pqc.c b/ta/pkcs11/src/processing_pqc.c
+new file mode 100644
+index 000000000..8491ab1ce
+--- /dev/null
++++ b/ta/pkcs11/src/processing_pqc.c
+@@ -0,0 +1,730 @@
++// SPDX-License-Identifier: BSD-2-Clause
++/*
++ * Post-quantum (PKCS#11 v3.2) mechanisms: ML-DSA-44/65/87 signatures and
++ * ML-KEM-512/768/1024 key encapsulation.
++ *
++ * Unlike RSA/EC/EdDSA, there is no GlobalPlatform TEE Internal Core API
++ * algorithm for ML-DSA or ML-KEM, so neither mechanism ever allocates a
++ * TEE_OperationHandle or a TEE_ObjectHandle: key material is kept as plain
++ * byte blobs in the object's attribute list and the vendored
++ * mldsa-native/mlkem-native reference implementations
++ * (ta/pkcs11/mldsa-native and ta/pkcs11/mlkem-native) are
++ * called directly on it. All three parameter sets of each mechanism are
++ * compiled in whenever CFG_PKCS11_TA_ML_DSA=y / CFG_PKCS11_TA_ML_KEM=y and
++ * coexist at runtime, selected per key via CKA_PARAMETER_SET.
++ */
++
++#include <assert.h>
++#include <inttypes.h>
++#include <pkcs11_ta.h>
++#include <tee_internal_api.h>
++
++#include "attributes.h"
++#include "pkcs11_helpers.h"
++#include "pkcs11_token.h"
++#include "processing.h"
++#include "serializer.h"
++
++#if defined(CFG_PKCS11_TA_ML_DSA) || defined(CFG_PKCS11_TA_ML_KEM)
++/*
++ * CKA_PARAMETER_SET is optional on the private key template: when the
++ * caller omits it, the *_opt_or_null attribute processing still adds it
++ * to the object with a zero-length value rather than leaving it absent
++ * (see set_attributes_opt_or_null()). Treat that empty-but-present case
++ * the same as PKCS11_RV_NOT_FOUND.
++ */
++static enum pkcs11_rc check_parameter_set(struct obj_attrs *head,
++					  uint32_t expected_parameter_set)
++{
++	void *value = NULL;
++	uint32_t size = 0;
++	enum pkcs11_rc rc = get_attribute_ptr(head, PKCS11_CKA_PARAMETER_SET,
++					      &value, &size);
++
++	if (rc == PKCS11_RV_NOT_FOUND || (!rc && !size))
++		return PKCS11_CKR_OK;
++
++	if (rc)
++		return rc;
++
++	if (size != sizeof(uint32_t) ||
++	    *(uint32_t *)value != expected_parameter_set)
++		return PKCS11_CKR_PARAMETER_SET_NOT_SUPPORTED;
++
++	return PKCS11_CKR_OK;
++}
++
++/*
++ * add_attribute() always appends rather than replacing: if the template's
++ * *_opt_or_null processing already left a zero-length CKA_PARAMETER_SET
++ * placeholder on this object (see check_parameter_set() above), blindly
++ * adding another one creates a duplicate. Since get_attribute_ptr() (used
++ * by both check_parameter_set() and the client's C_GetAttributeValue)
++ * returns the first match, that duplicate would leave the empty
++ * placeholder permanently shadowing the real value. Remove the empty
++ * placeholder, if any, before adding the resolved value. If a non-empty
++ * value is already present, it was already validated by
++ * check_parameter_set() - leave it as is rather than duplicating it.
++ */
++static enum pkcs11_rc set_parameter_set_attribute(struct obj_attrs **head,
++						  uint32_t parameter_set)
++{
++	enum pkcs11_rc rc = remove_empty_attribute(head,
++						   PKCS11_CKA_PARAMETER_SET);
++
++	if (rc == PKCS11_CKR_FUNCTION_FAILED)
++		return PKCS11_CKR_OK;
++
++	if (rc && rc != PKCS11_RV_NOT_FOUND)
++		return rc;
++
++	return add_attribute(head, PKCS11_CKA_PARAMETER_SET, &parameter_set,
++			     sizeof(parameter_set));
++}
++#endif /* CFG_PKCS11_TA_ML_DSA || CFG_PKCS11_TA_ML_KEM */
++
++#ifdef CFG_PKCS11_TA_ML_DSA
++#include <mldsa_native_all.h>
++
++/*
++ * CKA_PARAMETER_SET is mandatory on the public key template (see the
++ * comment on mldsa_key_mandated[] in pkcs11_attributes.c), so by the time
++ * generate_mldsa_keys() runs it is always present with a real value -
++ * except when called on a template built before this file's own
++ * *_opt_or_null default-value processing ran, hence the defensive
++ * NOT_FOUND/empty fallback to ML-DSA-65 here, matching this mechanism's
++ * original (pre-ML-DSA-87) single-parameter-set behaviour.
++ */
++static enum pkcs11_rc get_mldsa_parameter_set(struct obj_attrs *head,
++					      uint32_t *parameter_set)
++{
++	void *value = NULL;
++	uint32_t size = 0;
++	enum pkcs11_rc rc = get_attribute_ptr(head, PKCS11_CKA_PARAMETER_SET,
++					      &value, &size);
++
++	if (rc == PKCS11_RV_NOT_FOUND || (!rc && !size)) {
++		*parameter_set = PKCS11_CKP_ML_DSA_65;
++		return PKCS11_CKR_OK;
++	}
++
++	if (rc)
++		return rc;
++
++	if (size != sizeof(*parameter_set))
++		return PKCS11_CKR_ATTRIBUTE_VALUE_INVALID;
++
++	*parameter_set = *(uint32_t *)value;
++
++	switch (*parameter_set) {
++	case PKCS11_CKP_ML_DSA_44:
++	case PKCS11_CKP_ML_DSA_65:
++	case PKCS11_CKP_ML_DSA_87:
++		return PKCS11_CKR_OK;
++	default:
++		return PKCS11_CKR_PARAMETER_SET_NOT_SUPPORTED;
++	}
++}
++
++enum pkcs11_rc generate_mldsa_keys(struct pkcs11_attribute_head *proc_params,
++				   struct obj_attrs **pub_head,
++				   struct obj_attrs **priv_head)
++{
++	uint8_t pub_key[MLDSA_PUBLICKEYBYTES(87)] = { };
++	uint8_t priv_key[MLDSA_SECRETKEYBYTES(87)] = { };
++	uint32_t parameter_set = PKCS11_CKP_UNDEFINED_ID;
++	uint32_t pub_key_size = 0;
++	uint32_t priv_key_size = 0;
++	enum pkcs11_rc rc = PKCS11_CKR_OK;
++
++	if (proc_params->size) {
++		EMSG("Invalid parameter for mechanism %#"PRIx32,
++		     proc_params->id);
++		return PKCS11_CKR_MECHANISM_PARAM_INVALID;
++	}
++
++	rc = get_mldsa_parameter_set(*pub_head, &parameter_set);
++	if (rc)
++		return rc;
++
++	rc = check_parameter_set(*pub_head, parameter_set);
++	if (rc)
++		return rc;
++
++	rc = check_parameter_set(*priv_head, parameter_set);
++	if (rc)
++		return rc;
++
++	if (remove_empty_attribute(pub_head, PKCS11_CKA_VALUE) ==
++	    PKCS11_CKR_FUNCTION_FAILED ||
++	    remove_empty_attribute(priv_head, PKCS11_CKA_VALUE) ==
++	    PKCS11_CKR_FUNCTION_FAILED) {
++		EMSG("Unexpected CKA_VALUE found in template");
++		return PKCS11_CKR_TEMPLATE_INCONSISTENT;
++	}
++
++	switch (parameter_set) {
++	case PKCS11_CKP_ML_DSA_44:
++		pub_key_size = MLDSA_PUBLICKEYBYTES(44);
++		priv_key_size = MLDSA_SECRETKEYBYTES(44);
++		if (pkcs11_mldsa44_keypair(pub_key, priv_key)) {
++			EMSG("ML-DSA-44 key pair generation failed");
++			return PKCS11_CKR_FUNCTION_FAILED;
++		}
++		break;
++	case PKCS11_CKP_ML_DSA_65:
++		pub_key_size = MLDSA_PUBLICKEYBYTES(65);
++		priv_key_size = MLDSA_SECRETKEYBYTES(65);
++		if (pkcs11_mldsa65_keypair(pub_key, priv_key)) {
++			EMSG("ML-DSA-65 key pair generation failed");
++			return PKCS11_CKR_FUNCTION_FAILED;
++		}
++		break;
++	case PKCS11_CKP_ML_DSA_87:
++		pub_key_size = MLDSA_PUBLICKEYBYTES(87);
++		priv_key_size = MLDSA_SECRETKEYBYTES(87);
++		if (pkcs11_mldsa87_keypair(pub_key, priv_key)) {
++			EMSG("ML-DSA-87 key pair generation failed");
++			return PKCS11_CKR_FUNCTION_FAILED;
++		}
++		break;
++	default:
++		/* Unreachable: already validated above */
++		return PKCS11_CKR_PARAMETER_SET_NOT_SUPPORTED;
++	}
++
++	rc = add_attribute(pub_head, PKCS11_CKA_VALUE, pub_key, pub_key_size);
++	if (rc)
++		goto out;
++
++	rc = set_parameter_set_attribute(pub_head, parameter_set);
++	if (rc)
++		goto out;
++
++	rc = add_attribute(priv_head, PKCS11_CKA_VALUE, priv_key,
++			   priv_key_size);
++	if (rc)
++		goto out;
++
++	rc = set_parameter_set_attribute(priv_head, parameter_set);
++
++out:
++	TEE_MemFill(priv_key, 0, sizeof(priv_key));
++
++	return rc;
++}
++
++static enum pkcs11_rc do_mldsa_sign(struct pkcs11_object *obj, void *in_buf,
++				    uint32_t in_size, void *out_buf,
++				    size_t *out_size)
++{
++	void *priv_key = NULL;
++	uint32_t priv_key_size = 0;
++	uint32_t parameter_set = PKCS11_CKP_UNDEFINED_ID;
++	enum pkcs11_rc rc = PKCS11_CKR_OK;
++
++	rc = get_mldsa_parameter_set(obj->attributes, &parameter_set);
++	if (rc)
++		return rc;
++
++	rc = get_attribute_ptr(obj->attributes, PKCS11_CKA_VALUE, &priv_key,
++			       &priv_key_size);
++	if (rc)
++		return PKCS11_CKR_GENERAL_ERROR;
++
++	switch (parameter_set) {
++	case PKCS11_CKP_ML_DSA_44:
++		if (*out_size < MLDSA_BYTES(44)) {
++			*out_size = MLDSA_BYTES(44);
++			return PKCS11_CKR_BUFFER_TOO_SMALL;
++		}
++		if (priv_key_size != MLDSA_SECRETKEYBYTES(44)) {
++			EMSG("Invalid ML-DSA-44 private key");
++			return PKCS11_CKR_GENERAL_ERROR;
++		}
++		if (pkcs11_mldsa44_signature(out_buf, in_buf, in_size, NULL,
++					     0, priv_key))
++			return PKCS11_CKR_FUNCTION_FAILED;
++		*out_size = MLDSA_BYTES(44);
++		break;
++	case PKCS11_CKP_ML_DSA_65:
++		if (*out_size < MLDSA_BYTES(65)) {
++			*out_size = MLDSA_BYTES(65);
++			return PKCS11_CKR_BUFFER_TOO_SMALL;
++		}
++		if (priv_key_size != MLDSA_SECRETKEYBYTES(65)) {
++			EMSG("Invalid ML-DSA-65 private key");
++			return PKCS11_CKR_GENERAL_ERROR;
++		}
++		if (pkcs11_mldsa65_signature(out_buf, in_buf, in_size, NULL,
++					     0, priv_key))
++			return PKCS11_CKR_FUNCTION_FAILED;
++		*out_size = MLDSA_BYTES(65);
++		break;
++	case PKCS11_CKP_ML_DSA_87:
++		if (*out_size < MLDSA_BYTES(87)) {
++			*out_size = MLDSA_BYTES(87);
++			return PKCS11_CKR_BUFFER_TOO_SMALL;
++		}
++		if (priv_key_size != MLDSA_SECRETKEYBYTES(87)) {
++			EMSG("Invalid ML-DSA-87 private key");
++			return PKCS11_CKR_GENERAL_ERROR;
++		}
++		if (pkcs11_mldsa87_signature(out_buf, in_buf, in_size, NULL,
++					     0, priv_key))
++			return PKCS11_CKR_FUNCTION_FAILED;
++		*out_size = MLDSA_BYTES(87);
++		break;
++	default:
++		/* Unreachable: already validated above */
++		return PKCS11_CKR_GENERAL_ERROR;
++	}
++
++	return PKCS11_CKR_OK;
++}
++
++static enum pkcs11_rc do_mldsa_verify(struct pkcs11_object *obj, void *in_buf,
++				      uint32_t in_size, void *sig_buf,
++				      uint32_t sig_size)
++{
++	void *pub_key = NULL;
++	uint32_t pub_key_size = 0;
++	uint32_t parameter_set = PKCS11_CKP_UNDEFINED_ID;
++	enum pkcs11_rc rc = PKCS11_CKR_OK;
++
++	rc = get_mldsa_parameter_set(obj->attributes, &parameter_set);
++	if (rc)
++		return rc;
++
++	rc = get_attribute_ptr(obj->attributes, PKCS11_CKA_VALUE, &pub_key,
++			       &pub_key_size);
++	if (rc)
++		return PKCS11_CKR_GENERAL_ERROR;
++
++	switch (parameter_set) {
++	case PKCS11_CKP_ML_DSA_44:
++		if (sig_size != MLDSA_BYTES(44))
++			return PKCS11_CKR_SIGNATURE_LEN_RANGE;
++		if (pub_key_size != MLDSA_PUBLICKEYBYTES(44)) {
++			EMSG("Invalid ML-DSA-44 public key");
++			return PKCS11_CKR_GENERAL_ERROR;
++		}
++		if (pkcs11_mldsa44_verify(sig_buf, in_buf, in_size, NULL, 0,
++					  pub_key))
++			return PKCS11_CKR_SIGNATURE_INVALID;
++		break;
++	case PKCS11_CKP_ML_DSA_65:
++		if (sig_size != MLDSA_BYTES(65))
++			return PKCS11_CKR_SIGNATURE_LEN_RANGE;
++		if (pub_key_size != MLDSA_PUBLICKEYBYTES(65)) {
++			EMSG("Invalid ML-DSA-65 public key");
++			return PKCS11_CKR_GENERAL_ERROR;
++		}
++		if (pkcs11_mldsa65_verify(sig_buf, in_buf, in_size, NULL, 0,
++					  pub_key))
++			return PKCS11_CKR_SIGNATURE_INVALID;
++		break;
++	case PKCS11_CKP_ML_DSA_87:
++		if (sig_size != MLDSA_BYTES(87))
++			return PKCS11_CKR_SIGNATURE_LEN_RANGE;
++		if (pub_key_size != MLDSA_PUBLICKEYBYTES(87)) {
++			EMSG("Invalid ML-DSA-87 public key");
++			return PKCS11_CKR_GENERAL_ERROR;
++		}
++		if (pkcs11_mldsa87_verify(sig_buf, in_buf, in_size, NULL, 0,
++					  pub_key))
++			return PKCS11_CKR_SIGNATURE_INVALID;
++		break;
++	default:
++		/* Unreachable: already validated above */
++		return PKCS11_CKR_GENERAL_ERROR;
++	}
++
++	return PKCS11_CKR_OK;
++}
++#endif /* CFG_PKCS11_TA_ML_DSA */
++
++#ifdef CFG_PKCS11_TA_ML_KEM
++#include <mlkem_native_all.h>
++
++/*
++ * CKA_PARAMETER_SET is mandatory on the public key template for
++ * C_GenerateKeyPair (see mlkem_key_mandated[] in pkcs11_attributes.c), so
++ * by the time generate_mlkem_keys() runs it is always present with a real
++ * value - except when called on a template built before this file's own
++ * *_opt_or_null default-value processing ran, hence the defensive
++ * NOT_FOUND/empty fallback to ML-KEM-768 here, matching this mechanism's
++ * original (pre-ML-KEM-512/1024) single-parameter-set behaviour.
++ */
++static enum pkcs11_rc get_mlkem_parameter_set(struct obj_attrs *head,
++					      uint32_t *parameter_set)
++{
++	void *value = NULL;
++	uint32_t size = 0;
++	enum pkcs11_rc rc = get_attribute_ptr(head, PKCS11_CKA_PARAMETER_SET,
++					      &value, &size);
++
++	if (rc == PKCS11_RV_NOT_FOUND || (!rc && !size)) {
++		*parameter_set = PKCS11_CKP_ML_KEM_768;
++		return PKCS11_CKR_OK;
++	}
++
++	if (rc)
++		return rc;
++
++	if (size != sizeof(*parameter_set))
++		return PKCS11_CKR_ATTRIBUTE_VALUE_INVALID;
++
++	*parameter_set = *(uint32_t *)value;
++
++	switch (*parameter_set) {
++	case PKCS11_CKP_ML_KEM_512:
++	case PKCS11_CKP_ML_KEM_768:
++	case PKCS11_CKP_ML_KEM_1024:
++		return PKCS11_CKR_OK;
++	default:
++		return PKCS11_CKR_PARAMETER_SET_NOT_SUPPORTED;
++	}
++}
++
++enum pkcs11_rc generate_mlkem_keys(struct pkcs11_attribute_head *proc_params,
++				   struct obj_attrs **pub_head,
++				   struct obj_attrs **priv_head)
++{
++	uint8_t pub_key[MLKEM_PUBLICKEYBYTES(1024)] = { };
++	uint8_t priv_key[MLKEM_SECRETKEYBYTES(1024)] = { };
++	uint32_t parameter_set = PKCS11_CKP_UNDEFINED_ID;
++	uint32_t pub_key_size = 0;
++	uint32_t priv_key_size = 0;
++	enum pkcs11_rc rc = PKCS11_CKR_OK;
++
++	if (proc_params->size) {
++		EMSG("Invalid parameter for mechanism %#"PRIx32,
++		     proc_params->id);
++		return PKCS11_CKR_MECHANISM_PARAM_INVALID;
++	}
++
++	rc = get_mlkem_parameter_set(*pub_head, &parameter_set);
++	if (rc)
++		return rc;
++
++	rc = check_parameter_set(*pub_head, parameter_set);
++	if (rc)
++		return rc;
++
++	rc = check_parameter_set(*priv_head, parameter_set);
++	if (rc)
++		return rc;
++
++	if (remove_empty_attribute(pub_head, PKCS11_CKA_VALUE) ==
++	    PKCS11_CKR_FUNCTION_FAILED ||
++	    remove_empty_attribute(priv_head, PKCS11_CKA_VALUE) ==
++	    PKCS11_CKR_FUNCTION_FAILED) {
++		EMSG("Unexpected CKA_VALUE found in template");
++		return PKCS11_CKR_TEMPLATE_INCONSISTENT;
++	}
++
++	switch (parameter_set) {
++	case PKCS11_CKP_ML_KEM_512:
++		pub_key_size = MLKEM_PUBLICKEYBYTES(512);
++		priv_key_size = MLKEM_SECRETKEYBYTES(512);
++		if (pkcs11_mlkem512_keypair(pub_key, priv_key)) {
++			EMSG("ML-KEM-512 key pair generation failed");
++			return PKCS11_CKR_FUNCTION_FAILED;
++		}
++		break;
++	case PKCS11_CKP_ML_KEM_768:
++		pub_key_size = MLKEM_PUBLICKEYBYTES(768);
++		priv_key_size = MLKEM_SECRETKEYBYTES(768);
++		if (pkcs11_mlkem768_keypair(pub_key, priv_key)) {
++			EMSG("ML-KEM-768 key pair generation failed");
++			return PKCS11_CKR_FUNCTION_FAILED;
++		}
++		break;
++	case PKCS11_CKP_ML_KEM_1024:
++		pub_key_size = MLKEM_PUBLICKEYBYTES(1024);
++		priv_key_size = MLKEM_SECRETKEYBYTES(1024);
++		if (pkcs11_mlkem1024_keypair(pub_key, priv_key)) {
++			EMSG("ML-KEM-1024 key pair generation failed");
++			return PKCS11_CKR_FUNCTION_FAILED;
++		}
++		break;
++	default:
++		/* Unreachable: already validated above */
++		return PKCS11_CKR_PARAMETER_SET_NOT_SUPPORTED;
++	}
++
++	rc = add_attribute(pub_head, PKCS11_CKA_VALUE, pub_key, pub_key_size);
++	if (rc)
++		goto out;
++
++	rc = set_parameter_set_attribute(pub_head, parameter_set);
++	if (rc)
++		goto out;
++
++	rc = add_attribute(priv_head, PKCS11_CKA_VALUE, priv_key,
++			   priv_key_size);
++	if (rc)
++		goto out;
++
++	rc = set_parameter_set_attribute(priv_head, parameter_set);
++
++out:
++	TEE_MemFill(priv_key, 0, sizeof(priv_key));
++
++	return rc;
++}
++
++enum pkcs11_rc do_mlkem_encapsulate(struct pkcs11_object *pub_obj,
++				    void *ct_buf, size_t *ct_size,
++				    uint8_t shared_secret[MLKEM_BYTES])
++{
++	void *pub_key = NULL;
++	uint32_t pub_key_size = 0;
++	uint32_t parameter_set = PKCS11_CKP_UNDEFINED_ID;
++	enum pkcs11_rc rc = PKCS11_CKR_OK;
++
++	rc = get_mlkem_parameter_set(pub_obj->attributes, &parameter_set);
++	if (rc)
++		return rc;
++
++	rc = get_attribute_ptr(pub_obj->attributes, PKCS11_CKA_VALUE, &pub_key,
++			       &pub_key_size);
++	if (rc)
++		return PKCS11_CKR_GENERAL_ERROR;
++
++	switch (parameter_set) {
++	case PKCS11_CKP_ML_KEM_512:
++		if (*ct_size < MLKEM_CIPHERTEXTBYTES(512)) {
++			*ct_size = MLKEM_CIPHERTEXTBYTES(512);
++			return PKCS11_CKR_BUFFER_TOO_SMALL;
++		}
++		if (pub_key_size != MLKEM_PUBLICKEYBYTES(512)) {
++			EMSG("Invalid ML-KEM-512 public key");
++			return PKCS11_CKR_GENERAL_ERROR;
++		}
++		if (pkcs11_mlkem512_enc(ct_buf, shared_secret, pub_key))
++			return PKCS11_CKR_FUNCTION_FAILED;
++		*ct_size = MLKEM_CIPHERTEXTBYTES(512);
++		break;
++	case PKCS11_CKP_ML_KEM_768:
++		if (*ct_size < MLKEM_CIPHERTEXTBYTES(768)) {
++			*ct_size = MLKEM_CIPHERTEXTBYTES(768);
++			return PKCS11_CKR_BUFFER_TOO_SMALL;
++		}
++		if (pub_key_size != MLKEM_PUBLICKEYBYTES(768)) {
++			EMSG("Invalid ML-KEM-768 public key");
++			return PKCS11_CKR_GENERAL_ERROR;
++		}
++		if (pkcs11_mlkem768_enc(ct_buf, shared_secret, pub_key))
++			return PKCS11_CKR_FUNCTION_FAILED;
++		*ct_size = MLKEM_CIPHERTEXTBYTES(768);
++		break;
++	case PKCS11_CKP_ML_KEM_1024:
++		if (*ct_size < MLKEM_CIPHERTEXTBYTES(1024)) {
++			*ct_size = MLKEM_CIPHERTEXTBYTES(1024);
++			return PKCS11_CKR_BUFFER_TOO_SMALL;
++		}
++		if (pub_key_size != MLKEM_PUBLICKEYBYTES(1024)) {
++			EMSG("Invalid ML-KEM-1024 public key");
++			return PKCS11_CKR_GENERAL_ERROR;
++		}
++		if (pkcs11_mlkem1024_enc(ct_buf, shared_secret, pub_key))
++			return PKCS11_CKR_FUNCTION_FAILED;
++		*ct_size = MLKEM_CIPHERTEXTBYTES(1024);
++		break;
++	default:
++		/* Unreachable: already validated above */
++		return PKCS11_CKR_GENERAL_ERROR;
++	}
++
++	return PKCS11_CKR_OK;
++}
++
++enum pkcs11_rc do_mlkem_decapsulate(struct pkcs11_object *priv_obj,
++				    void *ct_buf, uint32_t ct_size,
++				    uint8_t shared_secret[MLKEM_BYTES])
++{
++	void *priv_key = NULL;
++	uint32_t priv_key_size = 0;
++	uint32_t parameter_set = PKCS11_CKP_UNDEFINED_ID;
++	enum pkcs11_rc rc = PKCS11_CKR_OK;
++
++	rc = get_mlkem_parameter_set(priv_obj->attributes, &parameter_set);
++	if (rc)
++		return rc;
++
++	rc = get_attribute_ptr(priv_obj->attributes, PKCS11_CKA_VALUE,
++			       &priv_key, &priv_key_size);
++	if (rc)
++		return PKCS11_CKR_GENERAL_ERROR;
++
++	switch (parameter_set) {
++	case PKCS11_CKP_ML_KEM_512:
++		if (ct_size != MLKEM_CIPHERTEXTBYTES(512))
++			return PKCS11_CKR_ENCRYPTED_DATA_LEN_RANGE;
++		if (priv_key_size != MLKEM_SECRETKEYBYTES(512)) {
++			EMSG("Invalid ML-KEM-512 private key");
++			return PKCS11_CKR_GENERAL_ERROR;
++		}
++		if (pkcs11_mlkem512_dec(shared_secret, ct_buf, priv_key))
++			return PKCS11_CKR_ENCRYPTED_DATA_INVALID;
++		break;
++	case PKCS11_CKP_ML_KEM_768:
++		if (ct_size != MLKEM_CIPHERTEXTBYTES(768))
++			return PKCS11_CKR_ENCRYPTED_DATA_LEN_RANGE;
++		if (priv_key_size != MLKEM_SECRETKEYBYTES(768)) {
++			EMSG("Invalid ML-KEM-768 private key");
++			return PKCS11_CKR_GENERAL_ERROR;
++		}
++		if (pkcs11_mlkem768_dec(shared_secret, ct_buf, priv_key))
++			return PKCS11_CKR_ENCRYPTED_DATA_INVALID;
++		break;
++	case PKCS11_CKP_ML_KEM_1024:
++		if (ct_size != MLKEM_CIPHERTEXTBYTES(1024))
++			return PKCS11_CKR_ENCRYPTED_DATA_LEN_RANGE;
++		if (priv_key_size != MLKEM_SECRETKEYBYTES(1024)) {
++			EMSG("Invalid ML-KEM-1024 private key");
++			return PKCS11_CKR_GENERAL_ERROR;
++		}
++		if (pkcs11_mlkem1024_dec(shared_secret, ct_buf, priv_key))
++			return PKCS11_CKR_ENCRYPTED_DATA_INVALID;
++		break;
++	default:
++		/* Unreachable: already validated above */
++		return PKCS11_CKR_GENERAL_ERROR;
++	}
++
++	return PKCS11_CKR_OK;
++}
++#endif /* CFG_PKCS11_TA_ML_KEM */
++
++bool processing_is_tee_pqc(uint32_t proc_id)
++{
++	switch (proc_id) {
++#ifdef CFG_PKCS11_TA_ML_DSA
++	case PKCS11_CKM_ML_DSA:
++		return true;
++#endif
++	default:
++		return false;
++	}
++}
++
++/*
++ * init_pqc_operation() / step_pqc_operation() are always linkable: they are
++ * called unconditionally from processing.c, gated at runtime by
++ * processing_is_tee_pqc() (which returns false for every mechanism when no
++ * PQC feature is enabled, making the switches below unreachable dead code
++ * in that configuration).
++ */
++enum pkcs11_rc init_pqc_operation(struct pkcs11_session *session,
++				  enum processing_func function,
++				  struct pkcs11_attribute_head *proc_params,
++				  struct pkcs11_object *obj)
++{
++	assert(processing_is_tee_pqc(proc_params->id));
++
++	if (proc_params->size)
++		return PKCS11_CKR_MECHANISM_PARAM_INVALID;
++
++	switch (proc_params->id) {
++#ifdef CFG_PKCS11_TA_ML_DSA
++	case PKCS11_CKM_ML_DSA:
++		if (function != PKCS11_FUNCTION_SIGN &&
++		    function != PKCS11_FUNCTION_VERIFY)
++			return PKCS11_CKR_MECHANISM_INVALID;
++		break;
++#endif
++	default:
++		return PKCS11_CKR_MECHANISM_INVALID;
++	}
++
++	/*
++	 * extra_ctx is always expected to be a TEE_Malloc()'d buffer owned by
++	 * the active processing state: release_active_processing() calls
++	 * TEE_Free() on it unconditionally. obj is a borrowed pointer into
++	 * the live object store, not owned here, so it must not be stored
++	 * directly - wrap it in a small heap allocation instead.
++	 */
++	session->processing->extra_ctx = TEE_Malloc(sizeof(obj), 0);
++	if (!session->processing->extra_ctx)
++		return PKCS11_CKR_DEVICE_MEMORY;
++
++	*(struct pkcs11_object **)session->processing->extra_ctx = obj;
++	session->processing->mecha_type = proc_params->id;
++
++	return PKCS11_CKR_OK;
++}
++
++enum pkcs11_rc step_pqc_operation(struct pkcs11_session *session,
++				  enum processing_func function,
++				  enum processing_step step,
++				  uint32_t ptypes, TEE_Param *params)
++{
++	struct active_processing *proc = session->processing;
++	enum pkcs11_rc rc = PKCS11_CKR_GENERAL_ERROR;
++
++	/* Pure ML-DSA signs/verifies the whole message in a single call */
++	if (step != PKCS11_FUNC_STEP_ONESHOT)
++		return PKCS11_CKR_MECHANISM_INVALID;
++
++	switch (proc->mecha_type) {
++#ifdef CFG_PKCS11_TA_ML_DSA
++	case PKCS11_CKM_ML_DSA: {
++		struct pkcs11_object *obj = *(struct pkcs11_object **)proc->extra_ctx;
++		void *in_buf = NULL;
++		uint32_t in_size = 0;
++		void *sig_buf = NULL;
++		uint32_t sig_size = 0;
++		size_t out_size = 0;
++
++		if (TEE_PARAM_TYPE_GET(ptypes, 1) ==
++		    TEE_PARAM_TYPE_MEMREF_INPUT) {
++			in_buf = params[1].memref.buffer;
++			in_size = params[1].memref.size;
++			if (in_size && !in_buf)
++				return PKCS11_CKR_ARGUMENTS_BAD;
++		}
++
++		switch (function) {
++		case PKCS11_FUNCTION_SIGN:
++			if (TEE_PARAM_TYPE_GET(ptypes, 2) !=
++			    TEE_PARAM_TYPE_MEMREF_OUTPUT)
++				return PKCS11_CKR_ARGUMENTS_BAD;
++
++			out_size = params[2].memref.size;
++			rc = do_mldsa_sign(obj, in_buf, in_size,
++					   params[2].memref.buffer,
++					   &out_size);
++			if (rc == PKCS11_CKR_OK ||
++			    rc == PKCS11_CKR_BUFFER_TOO_SMALL)
++				params[2].memref.size = out_size;
++			break;
++		case PKCS11_FUNCTION_VERIFY:
++			if (TEE_PARAM_TYPE_GET(ptypes, 2) !=
++			    TEE_PARAM_TYPE_MEMREF_INPUT)
++				return PKCS11_CKR_ARGUMENTS_BAD;
++
++			sig_buf = params[2].memref.buffer;
++			sig_size = params[2].memref.size;
++			if (sig_size && !sig_buf)
++				return PKCS11_CKR_ARGUMENTS_BAD;
++
++			rc = do_mldsa_verify(obj, in_buf, in_size, sig_buf,
++					     sig_size);
++			break;
++		default:
++			TEE_Panic(function);
++			break;
++		}
++		break;
++	}
++#endif
++	default:
++		TEE_Panic(proc->mecha_type);
++		break;
++	}
++
++	return rc;
++}
+diff --git a/ta/pkcs11/src/sub.mk b/ta/pkcs11/src/sub.mk
+index 5dfbc2bed..6ca127fd9 100644
+--- a/ta/pkcs11/src/sub.mk
++++ b/ta/pkcs11/src/sub.mk
+@@ -11,6 +11,7 @@ srcs-y += processing_aes.c
+ srcs-y += processing_asymm.c
+ srcs-y += processing_digest.c
+ srcs-y += processing_ec.c
++srcs-y += processing_pqc.c
+ srcs-y += processing_rsa.c
+ srcs-y += processing_symm.c
+ srcs-y += sanitize_object.c
+-- 
+2.34.1
+

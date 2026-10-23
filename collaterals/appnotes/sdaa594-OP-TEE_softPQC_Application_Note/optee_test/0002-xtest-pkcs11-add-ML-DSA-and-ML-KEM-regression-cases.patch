@@ -1,0 +1,945 @@
+From 77ce48c64d32a721bbc9127f99fe2f12575f9cdd Mon Sep 17 00:00:00 2001
+From: Kamlesh Gurudasani <kamlesh@ti.com>
+Date: Fri, 16 Oct 2026 15:55:01 +0530
+Subject: [PATCH 2/2] xtest: pkcs11: add ML-DSA and ML-KEM regression cases
+
+Add pkcs11_1100_pqc.c with regression cases for the PKCS#11 v3.2
+post-quantum mechanisms:
+
+  1100  ML-DSA-65
+  1101  ML-KEM-768
+  1102  ML-DSA-87
+  1103  ML-DSA-44
+  1104  ML-KEM-512
+  1105  ML-KEM-1024
+
+The ML-DSA cases generate a key pair, sign, verify and check that a
+tampered signature is rejected. The ML-KEM cases generate a key pair,
+encapsulate, decapsulate and check that both sides derive the same
+secret. The file is built when CFG_PKCS11_TA=y and needs a PKCS#11 TA
+built with CFG_PKCS11_TA_ML_DSA=y and CFG_PKCS11_TA_ML_KEM=y.
+
+Tested: xtest -t pkcs11 passes with no failures on an AM62Lx EVM.
+
+Signed-off-by: Kamlesh Gurudasani <kamlesh@ti.com>
+---
+ host/xtest/CMakeLists.txt    |   1 +
+ host/xtest/Makefile          |   1 +
+ host/xtest/pkcs11_1100_pqc.c | 881 +++++++++++++++++++++++++++++++++++
+ 3 files changed, 883 insertions(+)
+ create mode 100644 host/xtest/pkcs11_1100_pqc.c
+
+diff --git a/host/xtest/CMakeLists.txt b/host/xtest/CMakeLists.txt
+index da193bd..3e52480 100644
+--- a/host/xtest/CMakeLists.txt
++++ b/host/xtest/CMakeLists.txt
+@@ -109,6 +109,7 @@ endif()
+ if (CFG_PKCS11_TA)
+ 	add_compile_options(-DCFG_PKCS11_TA)
+ 	list (APPEND SRC pkcs11_1000.c)
++	list (APPEND SRC pkcs11_1100_pqc.c)
+ endif()
+ 
+ if (CFG_CRYPTO_SE05X)
+diff --git a/host/xtest/Makefile b/host/xtest/Makefile
+index 18ffb7b..f51c32d 100644
+--- a/host/xtest/Makefile
++++ b/host/xtest/Makefile
+@@ -90,6 +90,7 @@ endif
+ 
+ ifeq ($(CFG_PKCS11_TA),y)
+ srcs += pkcs11_1000.c
++srcs += pkcs11_1100_pqc.c
+ endif
+ 
+ objs 	:= $(patsubst %.c,$(out-dir)/xtest/%.o, $(srcs))
+diff --git a/host/xtest/pkcs11_1100_pqc.c b/host/xtest/pkcs11_1100_pqc.c
+new file mode 100644
+index 0000000..27eb153
+--- /dev/null
++++ b/host/xtest/pkcs11_1100_pqc.c
+@@ -0,0 +1,881 @@
++// SPDX-License-Identifier: GPL-2.0
++/*
++ * PKCS#11 v3.2 post-quantum mechanisms (ML-DSA-44, ML-DSA-65, ML-DSA-87,
++ * ML-KEM-512, ML-KEM-768, ML-KEM-1024) runtime validation. Modeled on the
++ * key generation / sign-verify / derive patterns already used throughout
++ * pkcs11_1000.c, reusing its session/token setup helpers (declared in
++ * pkcs11_1000.h) instead of duplicating them.
++ */
++
++#include <pkcs11.h>
++#include <stdint.h>
++#include <string.h>
++#include <util.h>
++
++#include "pkcs11_1000.h"
++#include "xtest_test.h"
++#include "xtest_helpers.h"
++
++static void xtest_pkcs11_test_1100(ADBG_Case_t *c)
++{
++	CK_RV rv = CKR_GENERAL_ERROR;
++	CK_SLOT_ID slot = 0;
++	CK_SESSION_HANDLE session = CK_INVALID_HANDLE;
++	CK_FLAGS session_flags = CKF_SERIAL_SESSION | CKF_RW_SESSION;
++	CK_OBJECT_HANDLE public_key = CK_INVALID_HANDLE;
++	CK_OBJECT_HANDLE private_key = CK_INVALID_HANDLE;
++	CK_MECHANISM keygen_mechanism = { CKM_ML_DSA_KEY_PAIR_GEN, NULL, 0 };
++	CK_MECHANISM sign_mechanism = { CKM_ML_DSA, NULL, 0 };
++	CK_ULONG param_set = CKP_ML_DSA_65;
++	CK_BBOOL btrue = CK_TRUE;
++	CK_BBOOL bfalse = CK_FALSE;
++	CK_ATTRIBUTE public_key_template[] = {
++		{ CKA_PARAMETER_SET, &param_set, sizeof(param_set) },
++		{ CKA_VERIFY, &btrue, sizeof(btrue) },
++	};
++	CK_ATTRIBUTE private_key_template[] = {
++		{ CKA_PARAMETER_SET, &param_set, sizeof(param_set) },
++		{ CKA_TOKEN, &bfalse, sizeof(bfalse) },
++		{ CKA_SIGN, &btrue, sizeof(btrue) },
++	};
++	const CK_BYTE message[] = "OP-TEE PKCS#11 ML-DSA-65 xtest message";
++	CK_BYTE tampered[sizeof(message)] = { 0 };
++	CK_BYTE signature[3309] = { 0 };
++	CK_ULONG signature_len = 0;
++
++	rv = init_lib_and_find_token_slot(&slot, PIN_AUTH);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		return;
++
++	rv = init_test_token_pin_auth(slot);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto close_lib;
++
++	rv = init_user_test_token_pin_auth(slot);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto close_lib;
++
++	rv = C_OpenSession(slot, session_flags, NULL, 0, &session);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto close_lib;
++
++	rv = C_Login(session, CKU_USER, test_token_user_pin,
++		     sizeof(test_token_user_pin));
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto out;
++
++	Do_ADBG_BeginSubCase(c, "ML-DSA-65: Generate key pair");
++
++	rv = C_GenerateKeyPair(session, &keygen_mechanism,
++			       public_key_template,
++			       ARRAY_SIZE(public_key_template),
++			       private_key_template,
++			       ARRAY_SIZE(private_key_template),
++			       &public_key, &private_key);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto err;
++
++	Do_ADBG_EndSubCase(c, NULL);
++	Do_ADBG_BeginSubCase(c, "ML-DSA-65: Sign & verify - oneshot");
++
++	signature_len = sizeof(signature);
++	rv = C_SignInit(session, &sign_mechanism, private_key);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto err_destr_keys;
++
++	rv = C_Sign(session, (void *)message, sizeof(message), signature,
++		    &signature_len);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto err_destr_keys;
++
++	rv = C_VerifyInit(session, &sign_mechanism, public_key);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto err_destr_keys;
++
++	rv = C_Verify(session, (void *)message, sizeof(message), signature,
++		      signature_len);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto err_destr_keys;
++
++	Do_ADBG_EndSubCase(c, NULL);
++	Do_ADBG_BeginSubCase(c, "ML-DSA-65: Verify rejects a tampered message");
++
++	memcpy(tampered, message, sizeof(message));
++	tampered[0] ^= 1;
++
++	rv = C_VerifyInit(session, &sign_mechanism, public_key);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto err_destr_keys;
++
++	rv = C_Verify(session, tampered, sizeof(tampered), signature,
++		      signature_len);
++	if (!ADBG_EXPECT_CK_RESULT(c, CKR_SIGNATURE_INVALID, rv))
++		goto err_destr_keys;
++
++	Do_ADBG_EndSubCase(c, NULL);
++	Do_ADBG_BeginSubCase(c, "ML-DSA-65: Destroy keys");
++
++	rv = C_DestroyObject(session, private_key);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto err;
++
++	rv = C_DestroyObject(session, public_key);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto err;
++
++	Do_ADBG_EndSubCase(c, NULL);
++	goto out;
++
++err_destr_keys:
++	ADBG_EXPECT_CK_OK(c, C_DestroyObject(session, private_key));
++	ADBG_EXPECT_CK_OK(c, C_DestroyObject(session, public_key));
++err:
++	Do_ADBG_EndSubCase(c, NULL);
++out:
++	ADBG_EXPECT_CK_OK(c, C_CloseSession(session));
++close_lib:
++	ADBG_EXPECT_CK_OK(c, close_lib());
++}
++ADBG_CASE_DEFINE(pkcs11, 1100, xtest_pkcs11_test_1100,
++		 "PKCS11: ML-DSA-65 key generation, sign and verify (PQC)");
++
++/*
++ * Same as xtest_pkcs11_test_1100() above, but for ML-DSA-87 - the other
++ * parameter set this TA supports, coexisting with ML-DSA-65 rather than
++ * replacing it (selected per key via CKA_PARAMETER_SET, not a build-time
++ * choice). Only the parameter set, mechanism, subcase text, message, and
++ * signature buffer size (ML-DSA-87's spec-correct 4627 bytes vs. 65's
++ * 3309) differ from test 1100.
++ */
++static void xtest_pkcs11_test_1102(ADBG_Case_t *c)
++{
++	CK_RV rv = CKR_GENERAL_ERROR;
++	CK_SLOT_ID slot = 0;
++	CK_SESSION_HANDLE session = CK_INVALID_HANDLE;
++	CK_FLAGS session_flags = CKF_SERIAL_SESSION | CKF_RW_SESSION;
++	CK_OBJECT_HANDLE public_key = CK_INVALID_HANDLE;
++	CK_OBJECT_HANDLE private_key = CK_INVALID_HANDLE;
++	CK_MECHANISM keygen_mechanism = { CKM_ML_DSA_KEY_PAIR_GEN, NULL, 0 };
++	CK_MECHANISM sign_mechanism = { CKM_ML_DSA, NULL, 0 };
++	CK_ULONG param_set = CKP_ML_DSA_87;
++	CK_BBOOL btrue = CK_TRUE;
++	CK_BBOOL bfalse = CK_FALSE;
++	CK_ATTRIBUTE public_key_template[] = {
++		{ CKA_PARAMETER_SET, &param_set, sizeof(param_set) },
++		{ CKA_VERIFY, &btrue, sizeof(btrue) },
++	};
++	CK_ATTRIBUTE private_key_template[] = {
++		{ CKA_PARAMETER_SET, &param_set, sizeof(param_set) },
++		{ CKA_TOKEN, &bfalse, sizeof(bfalse) },
++		{ CKA_SIGN, &btrue, sizeof(btrue) },
++	};
++	const CK_BYTE message[] = "OP-TEE PKCS#11 ML-DSA-87 xtest message";
++	CK_BYTE tampered[sizeof(message)] = { 0 };
++	CK_BYTE signature[4627] = { 0 };
++	CK_ULONG signature_len = 0;
++
++	rv = init_lib_and_find_token_slot(&slot, PIN_AUTH);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		return;
++
++	rv = init_test_token_pin_auth(slot);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto close_lib;
++
++	rv = init_user_test_token_pin_auth(slot);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto close_lib;
++
++	rv = C_OpenSession(slot, session_flags, NULL, 0, &session);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto close_lib;
++
++	rv = C_Login(session, CKU_USER, test_token_user_pin,
++		     sizeof(test_token_user_pin));
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto out;
++
++	Do_ADBG_BeginSubCase(c, "ML-DSA-87: Generate key pair");
++
++	rv = C_GenerateKeyPair(session, &keygen_mechanism,
++			       public_key_template,
++			       ARRAY_SIZE(public_key_template),
++			       private_key_template,
++			       ARRAY_SIZE(private_key_template),
++			       &public_key, &private_key);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto err;
++
++	Do_ADBG_EndSubCase(c, NULL);
++	Do_ADBG_BeginSubCase(c, "ML-DSA-87: Sign & verify - oneshot");
++
++	signature_len = sizeof(signature);
++	rv = C_SignInit(session, &sign_mechanism, private_key);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto err_destr_keys;
++
++	rv = C_Sign(session, (void *)message, sizeof(message), signature,
++		    &signature_len);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto err_destr_keys;
++
++	rv = C_VerifyInit(session, &sign_mechanism, public_key);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto err_destr_keys;
++
++	rv = C_Verify(session, (void *)message, sizeof(message), signature,
++		      signature_len);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto err_destr_keys;
++
++	Do_ADBG_EndSubCase(c, NULL);
++	Do_ADBG_BeginSubCase(c, "ML-DSA-87: Verify rejects a tampered message");
++
++	memcpy(tampered, message, sizeof(message));
++	tampered[0] ^= 1;
++
++	rv = C_VerifyInit(session, &sign_mechanism, public_key);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto err_destr_keys;
++
++	rv = C_Verify(session, tampered, sizeof(tampered), signature,
++		      signature_len);
++	if (!ADBG_EXPECT_CK_RESULT(c, CKR_SIGNATURE_INVALID, rv))
++		goto err_destr_keys;
++
++	Do_ADBG_EndSubCase(c, NULL);
++	Do_ADBG_BeginSubCase(c, "ML-DSA-87: Destroy keys");
++
++	rv = C_DestroyObject(session, private_key);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto err;
++
++	rv = C_DestroyObject(session, public_key);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto err;
++
++	Do_ADBG_EndSubCase(c, NULL);
++	goto out;
++
++err_destr_keys:
++	ADBG_EXPECT_CK_OK(c, C_DestroyObject(session, private_key));
++	ADBG_EXPECT_CK_OK(c, C_DestroyObject(session, public_key));
++err:
++	Do_ADBG_EndSubCase(c, NULL);
++out:
++	ADBG_EXPECT_CK_OK(c, C_CloseSession(session));
++close_lib:
++	ADBG_EXPECT_CK_OK(c, close_lib());
++}
++ADBG_CASE_DEFINE(pkcs11, 1102, xtest_pkcs11_test_1102,
++		 "PKCS11: ML-DSA-87 key generation, sign and verify (PQC)");
++
++/*
++ * Same as xtest_pkcs11_test_1100()/1102() above, but for ML-DSA-44 - the
++ * third parameter set this TA supports, coexisting with ML-DSA-65/87
++ * rather than replacing either. Only the parameter set, mechanism,
++ * subcase text, message, and signature buffer size (ML-DSA-44's
++ * spec-correct 2420 bytes vs. 65's 3309 and 87's 4627) differ from tests
++ * 1100/1102.
++ */
++static void xtest_pkcs11_test_1103(ADBG_Case_t *c)
++{
++	CK_RV rv = CKR_GENERAL_ERROR;
++	CK_SLOT_ID slot = 0;
++	CK_SESSION_HANDLE session = CK_INVALID_HANDLE;
++	CK_FLAGS session_flags = CKF_SERIAL_SESSION | CKF_RW_SESSION;
++	CK_OBJECT_HANDLE public_key = CK_INVALID_HANDLE;
++	CK_OBJECT_HANDLE private_key = CK_INVALID_HANDLE;
++	CK_MECHANISM keygen_mechanism = { CKM_ML_DSA_KEY_PAIR_GEN, NULL, 0 };
++	CK_MECHANISM sign_mechanism = { CKM_ML_DSA, NULL, 0 };
++	CK_ULONG param_set = CKP_ML_DSA_44;
++	CK_BBOOL btrue = CK_TRUE;
++	CK_BBOOL bfalse = CK_FALSE;
++	CK_ATTRIBUTE public_key_template[] = {
++		{ CKA_PARAMETER_SET, &param_set, sizeof(param_set) },
++		{ CKA_VERIFY, &btrue, sizeof(btrue) },
++	};
++	CK_ATTRIBUTE private_key_template[] = {
++		{ CKA_PARAMETER_SET, &param_set, sizeof(param_set) },
++		{ CKA_TOKEN, &bfalse, sizeof(bfalse) },
++		{ CKA_SIGN, &btrue, sizeof(btrue) },
++	};
++	const CK_BYTE message[] = "OP-TEE PKCS#11 ML-DSA-44 xtest message";
++	CK_BYTE tampered[sizeof(message)] = { 0 };
++	CK_BYTE signature[2420] = { 0 };
++	CK_ULONG signature_len = 0;
++
++	rv = init_lib_and_find_token_slot(&slot, PIN_AUTH);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		return;
++
++	rv = init_test_token_pin_auth(slot);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto close_lib;
++
++	rv = init_user_test_token_pin_auth(slot);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto close_lib;
++
++	rv = C_OpenSession(slot, session_flags, NULL, 0, &session);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto close_lib;
++
++	rv = C_Login(session, CKU_USER, test_token_user_pin,
++		     sizeof(test_token_user_pin));
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto out;
++
++	Do_ADBG_BeginSubCase(c, "ML-DSA-44: Generate key pair");
++
++	rv = C_GenerateKeyPair(session, &keygen_mechanism,
++			       public_key_template,
++			       ARRAY_SIZE(public_key_template),
++			       private_key_template,
++			       ARRAY_SIZE(private_key_template),
++			       &public_key, &private_key);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto err;
++
++	Do_ADBG_EndSubCase(c, NULL);
++	Do_ADBG_BeginSubCase(c, "ML-DSA-44: Sign & verify - oneshot");
++
++	signature_len = sizeof(signature);
++	rv = C_SignInit(session, &sign_mechanism, private_key);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto err_destr_keys;
++
++	rv = C_Sign(session, (void *)message, sizeof(message), signature,
++		    &signature_len);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto err_destr_keys;
++
++	rv = C_VerifyInit(session, &sign_mechanism, public_key);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto err_destr_keys;
++
++	rv = C_Verify(session, (void *)message, sizeof(message), signature,
++		      signature_len);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto err_destr_keys;
++
++	Do_ADBG_EndSubCase(c, NULL);
++	Do_ADBG_BeginSubCase(c, "ML-DSA-44: Verify rejects a tampered message");
++
++	memcpy(tampered, message, sizeof(message));
++	tampered[0] ^= 1;
++
++	rv = C_VerifyInit(session, &sign_mechanism, public_key);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto err_destr_keys;
++
++	rv = C_Verify(session, tampered, sizeof(tampered), signature,
++		      signature_len);
++	if (!ADBG_EXPECT_CK_RESULT(c, CKR_SIGNATURE_INVALID, rv))
++		goto err_destr_keys;
++
++	Do_ADBG_EndSubCase(c, NULL);
++	Do_ADBG_BeginSubCase(c, "ML-DSA-44: Destroy keys");
++
++	rv = C_DestroyObject(session, private_key);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto err;
++
++	rv = C_DestroyObject(session, public_key);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto err;
++
++	Do_ADBG_EndSubCase(c, NULL);
++	goto out;
++
++err_destr_keys:
++	ADBG_EXPECT_CK_OK(c, C_DestroyObject(session, private_key));
++	ADBG_EXPECT_CK_OK(c, C_DestroyObject(session, public_key));
++err:
++	Do_ADBG_EndSubCase(c, NULL);
++out:
++	ADBG_EXPECT_CK_OK(c, C_CloseSession(session));
++close_lib:
++	ADBG_EXPECT_CK_OK(c, close_lib());
++}
++ADBG_CASE_DEFINE(pkcs11, 1103, xtest_pkcs11_test_1103,
++		 "PKCS11: ML-DSA-44 key generation, sign and verify (PQC)");
++
++static void xtest_pkcs11_test_1101(ADBG_Case_t *c)
++{
++	CK_RV rv = CKR_GENERAL_ERROR;
++	CK_SLOT_ID slot = 0;
++	CK_SESSION_HANDLE session = CK_INVALID_HANDLE;
++	CK_FLAGS session_flags = CKF_SERIAL_SESSION | CKF_RW_SESSION;
++	CK_OBJECT_HANDLE public_key = CK_INVALID_HANDLE;
++	CK_OBJECT_HANDLE private_key = CK_INVALID_HANDLE;
++	CK_OBJECT_HANDLE encap_secret = CK_INVALID_HANDLE;
++	CK_OBJECT_HANDLE decap_secret = CK_INVALID_HANDLE;
++	CK_MECHANISM keygen_mechanism = { CKM_ML_KEM_KEY_PAIR_GEN, NULL, 0 };
++	CK_MECHANISM kem_mechanism = { CKM_ML_KEM, NULL, 0 };
++	CK_ULONG param_set = CKP_ML_KEM_768;
++	CK_BBOOL btrue = CK_TRUE;
++	CK_BBOOL bfalse = CK_FALSE;
++	CK_ATTRIBUTE public_key_template[] = {
++		{ CKA_PARAMETER_SET, &param_set, sizeof(param_set) },
++		{ CKA_ENCAPSULATE, &btrue, sizeof(btrue) },
++	};
++	CK_ATTRIBUTE private_key_template[] = {
++		{ CKA_PARAMETER_SET, &param_set, sizeof(param_set) },
++		{ CKA_TOKEN, &bfalse, sizeof(bfalse) },
++		{ CKA_DECAPSULATE, &btrue, sizeof(btrue) },
++	};
++	CK_OBJECT_CLASS secret_class = CKO_SECRET_KEY;
++	CK_KEY_TYPE secret_type = CKK_GENERIC_SECRET;
++	CK_ULONG secret_len = 32;
++	CK_ATTRIBUTE secret_key_template[] = {
++		{ CKA_CLASS, &secret_class, sizeof(secret_class) },
++		{ CKA_KEY_TYPE, &secret_type, sizeof(secret_type) },
++		{ CKA_SENSITIVE, &bfalse, sizeof(bfalse) },
++		{ CKA_EXTRACTABLE, &btrue, sizeof(btrue) },
++		{ CKA_VALUE_LEN, &secret_len, sizeof(secret_len) },
++	};
++	CK_BYTE ciphertext[1088] = { 0 };
++	CK_ULONG ciphertext_len = sizeof(ciphertext);
++	CK_BYTE encap_value[32] = { 0 };
++	CK_BYTE decap_value[32] = { 0 };
++	CK_ATTRIBUTE get_value_template = { CKA_VALUE, NULL, 0 };
++
++	rv = init_lib_and_find_token_slot(&slot, PIN_AUTH);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		return;
++
++	rv = init_test_token_pin_auth(slot);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto close_lib;
++
++	rv = init_user_test_token_pin_auth(slot);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto close_lib;
++
++	rv = C_OpenSession(slot, session_flags, NULL, 0, &session);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto close_lib;
++
++	rv = C_Login(session, CKU_USER, test_token_user_pin,
++		     sizeof(test_token_user_pin));
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto out;
++
++	Do_ADBG_BeginSubCase(c, "ML-KEM-768: Generate key pair");
++
++	rv = C_GenerateKeyPair(session, &keygen_mechanism,
++			       public_key_template,
++			       ARRAY_SIZE(public_key_template),
++			       private_key_template,
++			       ARRAY_SIZE(private_key_template),
++			       &public_key, &private_key);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto err;
++
++	Do_ADBG_EndSubCase(c, NULL);
++	Do_ADBG_BeginSubCase(c,
++			     "ML-KEM-768: Encapsulate/decapsulate round trip");
++
++	rv = C_EncapsulateKey(session, &kem_mechanism, public_key,
++			      secret_key_template,
++			      ARRAY_SIZE(secret_key_template),
++			      ciphertext, &ciphertext_len, &encap_secret);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto err_destr_keys;
++
++	rv = C_DecapsulateKey(session, &kem_mechanism, private_key,
++			      secret_key_template,
++			      ARRAY_SIZE(secret_key_template),
++			      ciphertext, ciphertext_len, &decap_secret);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto err_destr_encap;
++
++	get_value_template.pValue = encap_value;
++	get_value_template.ulValueLen = sizeof(encap_value);
++	rv = C_GetAttributeValue(session, encap_secret, &get_value_template, 1);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto err_destr_all;
++
++	get_value_template.pValue = decap_value;
++	get_value_template.ulValueLen = sizeof(decap_value);
++	rv = C_GetAttributeValue(session, decap_secret, &get_value_template, 1);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto err_destr_all;
++
++	/*
++	 * PKCS#11 encapsulate/decapsulate don't self-verify like sign/verify
++	 * does - the two derived shared secrets matching *is* the test.
++	 */
++	if (!ADBG_EXPECT_BUFFER(c, encap_value, sizeof(encap_value),
++				decap_value, sizeof(decap_value)))
++		goto err_destr_all;
++
++	Do_ADBG_EndSubCase(c, NULL);
++	Do_ADBG_BeginSubCase(c, "ML-KEM-768: Destroy keys");
++
++	rv = C_DestroyObject(session, encap_secret);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto err_destr_decap_and_keys;
++
++	rv = C_DestroyObject(session, decap_secret);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto err_destr_keys;
++
++	rv = C_DestroyObject(session, private_key);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto err;
++
++	rv = C_DestroyObject(session, public_key);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto err;
++
++	Do_ADBG_EndSubCase(c, NULL);
++	goto out;
++
++err_destr_all:
++	ADBG_EXPECT_CK_OK(c, C_DestroyObject(session, decap_secret));
++err_destr_encap:
++	ADBG_EXPECT_CK_OK(c, C_DestroyObject(session, encap_secret));
++err_destr_keys:
++	ADBG_EXPECT_CK_OK(c, C_DestroyObject(session, private_key));
++	ADBG_EXPECT_CK_OK(c, C_DestroyObject(session, public_key));
++err:
++	Do_ADBG_EndSubCase(c, NULL);
++	goto out;
++
++err_destr_decap_and_keys:
++	ADBG_EXPECT_CK_OK(c, C_DestroyObject(session, decap_secret));
++	goto err_destr_keys;
++
++out:
++	ADBG_EXPECT_CK_OK(c, C_CloseSession(session));
++close_lib:
++	ADBG_EXPECT_CK_OK(c, close_lib());
++}
++ADBG_CASE_DEFINE(pkcs11, 1101, xtest_pkcs11_test_1101,
++		 "PKCS11: ML-KEM-768 key generation, encapsulate and decapsulate (PQC)");
++
++/*
++ * Same as xtest_pkcs11_test_1101() above, but for ML-KEM-512 - a second
++ * parameter set this TA supports, coexisting with ML-KEM-768/1024 rather
++ * than replacing it. Only the parameter set, subcase text, message, and
++ * ciphertext buffer size (ML-KEM-512's spec-correct 768 bytes vs. 768's
++ * 1088 and 1024's 1568) differ from test 1101.
++ */
++static void xtest_pkcs11_test_1104(ADBG_Case_t *c)
++{
++	CK_RV rv = CKR_GENERAL_ERROR;
++	CK_SLOT_ID slot = 0;
++	CK_SESSION_HANDLE session = CK_INVALID_HANDLE;
++	CK_FLAGS session_flags = CKF_SERIAL_SESSION | CKF_RW_SESSION;
++	CK_OBJECT_HANDLE public_key = CK_INVALID_HANDLE;
++	CK_OBJECT_HANDLE private_key = CK_INVALID_HANDLE;
++	CK_OBJECT_HANDLE encap_secret = CK_INVALID_HANDLE;
++	CK_OBJECT_HANDLE decap_secret = CK_INVALID_HANDLE;
++	CK_MECHANISM keygen_mechanism = { CKM_ML_KEM_KEY_PAIR_GEN, NULL, 0 };
++	CK_MECHANISM kem_mechanism = { CKM_ML_KEM, NULL, 0 };
++	CK_ULONG param_set = CKP_ML_KEM_512;
++	CK_BBOOL btrue = CK_TRUE;
++	CK_BBOOL bfalse = CK_FALSE;
++	CK_ATTRIBUTE public_key_template[] = {
++		{ CKA_PARAMETER_SET, &param_set, sizeof(param_set) },
++		{ CKA_ENCAPSULATE, &btrue, sizeof(btrue) },
++	};
++	CK_ATTRIBUTE private_key_template[] = {
++		{ CKA_PARAMETER_SET, &param_set, sizeof(param_set) },
++		{ CKA_TOKEN, &bfalse, sizeof(bfalse) },
++		{ CKA_DECAPSULATE, &btrue, sizeof(btrue) },
++	};
++	CK_OBJECT_CLASS secret_class = CKO_SECRET_KEY;
++	CK_KEY_TYPE secret_type = CKK_GENERIC_SECRET;
++	CK_ULONG secret_len = 32;
++	CK_ATTRIBUTE secret_key_template[] = {
++		{ CKA_CLASS, &secret_class, sizeof(secret_class) },
++		{ CKA_KEY_TYPE, &secret_type, sizeof(secret_type) },
++		{ CKA_SENSITIVE, &bfalse, sizeof(bfalse) },
++		{ CKA_EXTRACTABLE, &btrue, sizeof(btrue) },
++		{ CKA_VALUE_LEN, &secret_len, sizeof(secret_len) },
++	};
++	CK_BYTE ciphertext[768] = { 0 };
++	CK_ULONG ciphertext_len = sizeof(ciphertext);
++	CK_BYTE encap_value[32] = { 0 };
++	CK_BYTE decap_value[32] = { 0 };
++	CK_ATTRIBUTE get_value_template = { CKA_VALUE, NULL, 0 };
++
++	rv = init_lib_and_find_token_slot(&slot, PIN_AUTH);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		return;
++
++	rv = init_test_token_pin_auth(slot);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto close_lib;
++
++	rv = init_user_test_token_pin_auth(slot);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto close_lib;
++
++	rv = C_OpenSession(slot, session_flags, NULL, 0, &session);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto close_lib;
++
++	rv = C_Login(session, CKU_USER, test_token_user_pin,
++		     sizeof(test_token_user_pin));
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto out;
++
++	Do_ADBG_BeginSubCase(c, "ML-KEM-512: Generate key pair");
++
++	rv = C_GenerateKeyPair(session, &keygen_mechanism,
++			       public_key_template,
++			       ARRAY_SIZE(public_key_template),
++			       private_key_template,
++			       ARRAY_SIZE(private_key_template),
++			       &public_key, &private_key);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto err;
++
++	Do_ADBG_EndSubCase(c, NULL);
++	Do_ADBG_BeginSubCase(c,
++			     "ML-KEM-512: Encapsulate/decapsulate round trip");
++
++	rv = C_EncapsulateKey(session, &kem_mechanism, public_key,
++			      secret_key_template,
++			      ARRAY_SIZE(secret_key_template),
++			      ciphertext, &ciphertext_len, &encap_secret);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto err_destr_keys;
++
++	rv = C_DecapsulateKey(session, &kem_mechanism, private_key,
++			      secret_key_template,
++			      ARRAY_SIZE(secret_key_template),
++			      ciphertext, ciphertext_len, &decap_secret);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto err_destr_encap;
++
++	get_value_template.pValue = encap_value;
++	get_value_template.ulValueLen = sizeof(encap_value);
++	rv = C_GetAttributeValue(session, encap_secret, &get_value_template, 1);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto err_destr_all;
++
++	get_value_template.pValue = decap_value;
++	get_value_template.ulValueLen = sizeof(decap_value);
++	rv = C_GetAttributeValue(session, decap_secret, &get_value_template, 1);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto err_destr_all;
++
++	/*
++	 * PKCS#11 encapsulate/decapsulate don't self-verify like sign/verify
++	 * does - the two derived shared secrets matching *is* the test.
++	 */
++	if (!ADBG_EXPECT_BUFFER(c, encap_value, sizeof(encap_value),
++				decap_value, sizeof(decap_value)))
++		goto err_destr_all;
++
++	Do_ADBG_EndSubCase(c, NULL);
++	Do_ADBG_BeginSubCase(c, "ML-KEM-512: Destroy keys");
++
++	rv = C_DestroyObject(session, encap_secret);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto err_destr_decap_and_keys;
++
++	rv = C_DestroyObject(session, decap_secret);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto err_destr_keys;
++
++	rv = C_DestroyObject(session, private_key);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto err;
++
++	rv = C_DestroyObject(session, public_key);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto err;
++
++	Do_ADBG_EndSubCase(c, NULL);
++	goto out;
++
++err_destr_all:
++	ADBG_EXPECT_CK_OK(c, C_DestroyObject(session, decap_secret));
++err_destr_encap:
++	ADBG_EXPECT_CK_OK(c, C_DestroyObject(session, encap_secret));
++err_destr_keys:
++	ADBG_EXPECT_CK_OK(c, C_DestroyObject(session, private_key));
++	ADBG_EXPECT_CK_OK(c, C_DestroyObject(session, public_key));
++err:
++	Do_ADBG_EndSubCase(c, NULL);
++	goto out;
++
++err_destr_decap_and_keys:
++	ADBG_EXPECT_CK_OK(c, C_DestroyObject(session, decap_secret));
++	goto err_destr_keys;
++
++out:
++	ADBG_EXPECT_CK_OK(c, C_CloseSession(session));
++close_lib:
++	ADBG_EXPECT_CK_OK(c, close_lib());
++}
++ADBG_CASE_DEFINE(pkcs11, 1104, xtest_pkcs11_test_1104,
++		 "PKCS11: ML-KEM-512 key generation, encapsulate and decapsulate (PQC)");
++
++/*
++ * Same as xtest_pkcs11_test_1101() above, but for ML-KEM-1024 - the third
++ * parameter set this TA supports, coexisting with ML-KEM-512/768 rather
++ * than replacing either. Only the parameter set, subcase text, message,
++ * and ciphertext buffer size (ML-KEM-1024's spec-correct 1568 bytes vs.
++ * 512's 768 and 768's 1088) differ from test 1101.
++ */
++static void xtest_pkcs11_test_1105(ADBG_Case_t *c)
++{
++	CK_RV rv = CKR_GENERAL_ERROR;
++	CK_SLOT_ID slot = 0;
++	CK_SESSION_HANDLE session = CK_INVALID_HANDLE;
++	CK_FLAGS session_flags = CKF_SERIAL_SESSION | CKF_RW_SESSION;
++	CK_OBJECT_HANDLE public_key = CK_INVALID_HANDLE;
++	CK_OBJECT_HANDLE private_key = CK_INVALID_HANDLE;
++	CK_OBJECT_HANDLE encap_secret = CK_INVALID_HANDLE;
++	CK_OBJECT_HANDLE decap_secret = CK_INVALID_HANDLE;
++	CK_MECHANISM keygen_mechanism = { CKM_ML_KEM_KEY_PAIR_GEN, NULL, 0 };
++	CK_MECHANISM kem_mechanism = { CKM_ML_KEM, NULL, 0 };
++	CK_ULONG param_set = CKP_ML_KEM_1024;
++	CK_BBOOL btrue = CK_TRUE;
++	CK_BBOOL bfalse = CK_FALSE;
++	CK_ATTRIBUTE public_key_template[] = {
++		{ CKA_PARAMETER_SET, &param_set, sizeof(param_set) },
++		{ CKA_ENCAPSULATE, &btrue, sizeof(btrue) },
++	};
++	CK_ATTRIBUTE private_key_template[] = {
++		{ CKA_PARAMETER_SET, &param_set, sizeof(param_set) },
++		{ CKA_TOKEN, &bfalse, sizeof(bfalse) },
++		{ CKA_DECAPSULATE, &btrue, sizeof(btrue) },
++	};
++	CK_OBJECT_CLASS secret_class = CKO_SECRET_KEY;
++	CK_KEY_TYPE secret_type = CKK_GENERIC_SECRET;
++	CK_ULONG secret_len = 32;
++	CK_ATTRIBUTE secret_key_template[] = {
++		{ CKA_CLASS, &secret_class, sizeof(secret_class) },
++		{ CKA_KEY_TYPE, &secret_type, sizeof(secret_type) },
++		{ CKA_SENSITIVE, &bfalse, sizeof(bfalse) },
++		{ CKA_EXTRACTABLE, &btrue, sizeof(btrue) },
++		{ CKA_VALUE_LEN, &secret_len, sizeof(secret_len) },
++	};
++	CK_BYTE ciphertext[1568] = { 0 };
++	CK_ULONG ciphertext_len = sizeof(ciphertext);
++	CK_BYTE encap_value[32] = { 0 };
++	CK_BYTE decap_value[32] = { 0 };
++	CK_ATTRIBUTE get_value_template = { CKA_VALUE, NULL, 0 };
++
++	rv = init_lib_and_find_token_slot(&slot, PIN_AUTH);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		return;
++
++	rv = init_test_token_pin_auth(slot);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto close_lib;
++
++	rv = init_user_test_token_pin_auth(slot);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto close_lib;
++
++	rv = C_OpenSession(slot, session_flags, NULL, 0, &session);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto close_lib;
++
++	rv = C_Login(session, CKU_USER, test_token_user_pin,
++		     sizeof(test_token_user_pin));
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto out;
++
++	Do_ADBG_BeginSubCase(c, "ML-KEM-1024: Generate key pair");
++
++	rv = C_GenerateKeyPair(session, &keygen_mechanism,
++			       public_key_template,
++			       ARRAY_SIZE(public_key_template),
++			       private_key_template,
++			       ARRAY_SIZE(private_key_template),
++			       &public_key, &private_key);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto err;
++
++	Do_ADBG_EndSubCase(c, NULL);
++	Do_ADBG_BeginSubCase(c,
++			     "ML-KEM-1024: Encapsulate/decapsulate round trip");
++
++	rv = C_EncapsulateKey(session, &kem_mechanism, public_key,
++			      secret_key_template,
++			      ARRAY_SIZE(secret_key_template),
++			      ciphertext, &ciphertext_len, &encap_secret);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto err_destr_keys;
++
++	rv = C_DecapsulateKey(session, &kem_mechanism, private_key,
++			      secret_key_template,
++			      ARRAY_SIZE(secret_key_template),
++			      ciphertext, ciphertext_len, &decap_secret);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto err_destr_encap;
++
++	get_value_template.pValue = encap_value;
++	get_value_template.ulValueLen = sizeof(encap_value);
++	rv = C_GetAttributeValue(session, encap_secret, &get_value_template, 1);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto err_destr_all;
++
++	get_value_template.pValue = decap_value;
++	get_value_template.ulValueLen = sizeof(decap_value);
++	rv = C_GetAttributeValue(session, decap_secret, &get_value_template, 1);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto err_destr_all;
++
++	/*
++	 * PKCS#11 encapsulate/decapsulate don't self-verify like sign/verify
++	 * does - the two derived shared secrets matching *is* the test.
++	 */
++	if (!ADBG_EXPECT_BUFFER(c, encap_value, sizeof(encap_value),
++				decap_value, sizeof(decap_value)))
++		goto err_destr_all;
++
++	Do_ADBG_EndSubCase(c, NULL);
++	Do_ADBG_BeginSubCase(c, "ML-KEM-1024: Destroy keys");
++
++	rv = C_DestroyObject(session, encap_secret);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto err_destr_decap_and_keys;
++
++	rv = C_DestroyObject(session, decap_secret);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto err_destr_keys;
++
++	rv = C_DestroyObject(session, private_key);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto err;
++
++	rv = C_DestroyObject(session, public_key);
++	if (!ADBG_EXPECT_CK_OK(c, rv))
++		goto err;
++
++	Do_ADBG_EndSubCase(c, NULL);
++	goto out;
++
++err_destr_all:
++	ADBG_EXPECT_CK_OK(c, C_DestroyObject(session, decap_secret));
++err_destr_encap:
++	ADBG_EXPECT_CK_OK(c, C_DestroyObject(session, encap_secret));
++err_destr_keys:
++	ADBG_EXPECT_CK_OK(c, C_DestroyObject(session, private_key));
++	ADBG_EXPECT_CK_OK(c, C_DestroyObject(session, public_key));
++err:
++	Do_ADBG_EndSubCase(c, NULL);
++	goto out;
++
++err_destr_decap_and_keys:
++	ADBG_EXPECT_CK_OK(c, C_DestroyObject(session, decap_secret));
++	goto err_destr_keys;
++
++out:
++	ADBG_EXPECT_CK_OK(c, C_CloseSession(session));
++close_lib:
++	ADBG_EXPECT_CK_OK(c, close_lib());
++}
++ADBG_CASE_DEFINE(pkcs11, 1105, xtest_pkcs11_test_1105,
++		 "PKCS11: ML-KEM-1024 key generation, encapsulate and decapsulate (PQC)");
+-- 
+2.34.1
+

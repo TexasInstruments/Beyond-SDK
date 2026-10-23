@@ -1,0 +1,223 @@
+From 0de4358ed22a6143b93a6bd0b16cc9212b63ebe6 Mon Sep 17 00:00:00 2001
+From: Kamlesh Gurudasani <kamlesh@ti.com>
+Date: Thu, 15 Oct 2026 15:41:25 +0530
+Subject: [PATCH 3/5] ta: pkcs11: add ML-DSA and ML-KEM identifiers to the TA
+ ABI
+
+Extend the PKCS#11 TA interface with the PKCS#11 v3.2 post-quantum
+definitions, so that clients and the TA agree on them:
+
+- Commands PKCS11_CMD_ENCAPSULATE_KEY and PKCS11_CMD_DECAPSULATE_KEY
+  for the new C_EncapsulateKey() / C_DecapsulateKey() functions.
+- Key types PKCS11_CKK_ML_DSA and PKCS11_CKK_ML_KEM.
+- Mechanisms PKCS11_CKM_ML_DSA{,_KEY_PAIR_GEN} and
+  PKCS11_CKM_ML_KEM{,_KEY_PAIR_GEN}.
+- Attributes CKA_PARAMETER_SET, CKA_SEED, CKA_ENCAPSULATE,
+  CKA_DECAPSULATE, CKA_ENCAPSULATE_TEMPLATE, CKA_DECAPSULATE_TEMPLATE.
+- Mechanism flags PKCS11_CKFM_ENCAPSULATE and PKCS11_CKFM_DECAPSULATE.
+- Return code PKCS11_CKR_PARAMETER_SET_NOT_SUPPORTED.
+- enum pkcs11_pqc_parameter_set with the values used for
+  CKA_PARAMETER_SET: ML-DSA-44/65/87 and ML-KEM-512/768/1024.
+
+The TA minor version is bumped to 2 as the interface is extended.
+
+pkcs11_helpers.c learns the size of the new attributes and the names of
+the new key types and return code, and treats ML-DSA and ML-KEM as
+asymmetric key types.
+
+The new definitions are not used by the TA yet.
+
+Signed-off-by: Kamlesh Gurudasani <kamlesh@ti.com>
+---
+ ta/pkcs11/include/pkcs11_ta.h  | 82 +++++++++++++++++++++++++++++++++-
+ ta/pkcs11/src/pkcs11_helpers.c | 11 +++++
+ 2 files changed, 92 insertions(+), 1 deletion(-)
+
+diff --git a/ta/pkcs11/include/pkcs11_ta.h b/ta/pkcs11/include/pkcs11_ta.h
+index 1d7707a74..9e195b216 100644
+--- a/ta/pkcs11/include/pkcs11_ta.h
++++ b/ta/pkcs11/include/pkcs11_ta.h
+@@ -14,7 +14,7 @@
+ 
+ /* PKCS11 trusted application version information */
+ #define PKCS11_TA_VERSION_MAJOR			1
+-#define PKCS11_TA_VERSION_MINOR			0
++#define PKCS11_TA_VERSION_MINOR			2
+ #define PKCS11_TA_VERSION_PATCH			0
+ 
+ /* Attribute specific values */
+@@ -713,6 +713,51 @@ enum pkcs11_ta_cmd {
+ 	 * This command relates to the PKCS#11 API function C_UnwrapKey().
+ 	 */
+ 	PKCS11_CMD_UNWRAP_KEY = 52,
++
++	/*
++	 * PKCS11_CMD_ENCAPSULATE_KEY - Encapsulate a key, creating a new
++	 *                               secret key object from the generated
++	 *                               shared secret.
++	 *
++	 * [in]  memref[0] = [
++	 *              32bit session handle,
++	 *              32bit public key handle,
++	 *              (struct pkcs11_attribute_head)mechanism + mecha params,
++	 *              (struct pkcs11_object_head)attribs + attributes data
++	 *	 ]
++	 * [out] memref[0] = 32bit return code, enum pkcs11_rc
++	 * [out] memref[2] = [
++	 *              32bit object handle,
++	 *              byte array: ciphertext
++	 *	 ]
++	 *
++	 * This command relates to the PKCS#11 API function
++	 * C_EncapsulateKey(). As for PKCS11_CMD_WRAP_KEY, the caller may
++	 * invoke this command with a short/zero-sized memref[2] to obtain
++	 * the expected output size, reported as return code
++	 * PKCS11_CKR_BUFFER_TOO_SMALL.
++	 */
++	PKCS11_CMD_ENCAPSULATE_KEY = 53,
++
++	/*
++	 * PKCS11_CMD_DECAPSULATE_KEY - Decapsulate a ciphertext, creating a
++	 *                               new secret key object from the
++	 *                               recovered shared secret.
++	 *
++	 * [in]  memref[0] = [
++	 *              32bit session handle,
++	 *              32bit private key handle,
++	 *              (struct pkcs11_attribute_head)mechanism + mecha params,
++	 *              (struct pkcs11_object_head)attribs + attributes data
++	 *	 ]
++	 * [out] memref[0] = 32bit return code, enum pkcs11_rc
++	 * [in]  memref[1] = byte array: ciphertext
++	 * [out] memref[2] = 32bit object handle
++	 *
++	 * This command relates to the PKCS#11 API function
++	 * C_DecapsulateKey().
++	 */
++	PKCS11_CMD_DECAPSULATE_KEY = 54,
+ };
+ 
+ /*
+@@ -795,6 +840,8 @@ enum pkcs11_rc {
+ 	PKCS11_CKR_PIN_TOO_WEAK			= 0x01b8,
+ 	PKCS11_CKR_PUBLIC_KEY_INVALID		= 0x01b9,
+ 	PKCS11_CKR_FUNCTION_REJECTED		= 0x0200,
++	/* PKCS#11 v3.2 */
++	PKCS11_CKR_PARAMETER_SET_NOT_SUPPORTED	= 0x0209,
+ 	/* Vendor specific IDs not returned to client */
+ 	PKCS11_RV_NOT_FOUND			= 0x80000000,
+ 	PKCS11_RV_NOT_IMPLEMENTED		= 0x80000001,
+@@ -1004,6 +1051,8 @@ struct pkcs11_mechanism_info {
+ #define PKCS11_CKFM_EC_NAMEDCURVE		(1U << 23)
+ #define PKCS11_CKFM_EC_UNCOMPRESS		(1U << 24)
+ #define PKCS11_CKFM_EC_COMPRESS			(1U << 25)
++#define PKCS11_CKFM_ENCAPSULATE			(1U << 26)
++#define PKCS11_CKFM_DECAPSULATE			(1U << 27)
+ 
+ /*
+  * pkcs11_object_head - Header of object whose data are serialized in memory
+@@ -1187,6 +1236,16 @@ enum pkcs11_attr_id {
+ 	PKCS11_CKA_ALLOWED_MECHANISMS		= PKCS11_CKF_ARRAY_ATTRIBUTE |
+ 						  0x0600,
+ 
++	/* PKCS#11 v3.2 (ML-KEM/ML-DSA) */
++	PKCS11_CKA_PARAMETER_SET		= 0x061d,
++	PKCS11_CKA_SEED				= 0x0637,
++	PKCS11_CKA_ENCAPSULATE			= 0x0633,
++	PKCS11_CKA_DECAPSULATE			= 0x0634,
++	PKCS11_CKA_ENCAPSULATE_TEMPLATE		= PKCS11_CKF_ARRAY_ATTRIBUTE |
++						  0x062a,
++	PKCS11_CKA_DECAPSULATE_TEMPLATE		= PKCS11_CKF_ARRAY_ATTRIBUTE |
++						  0x062b,
++
+ 	/* Vendor specific attributes */
+ 
+ 	/**
+@@ -1241,6 +1300,8 @@ enum pkcs11_key_type {
+ 	PKCS11_CKK_SHA512_HMAC			= 0x02d,
+ 	PKCS11_CKK_SHA224_HMAC			= 0x02e,
+ 	PKCS11_CKK_EC_EDWARDS			= 0x040,
++	PKCS11_CKK_ML_KEM			= 0x049,
++	PKCS11_CKK_ML_DSA			= 0x04a,
+ 	/* Vendor extension: reserved for undefined ID (~0U) */
+ 	PKCS11_CKK_UNDEFINED_ID			= PKCS11_UNDEFINED_ID,
+ };
+@@ -1280,6 +1341,10 @@ enum pkcs11_mechanism_id {
+ 	PKCS11_CKM_RSA_PKCS_OAEP		= 0x00009,
+ 	PKCS11_CKM_RSA_PKCS_PSS			= 0x0000d,
+ 	PKCS11_CKM_SHA1_RSA_PKCS_PSS		= 0x0000e,
++	PKCS11_CKM_ML_KEM_KEY_PAIR_GEN		= 0x0000f,
++	PKCS11_CKM_ML_KEM			= 0x00017,
++	PKCS11_CKM_ML_DSA_KEY_PAIR_GEN		= 0x0001c,
++	PKCS11_CKM_ML_DSA			= 0x0001d,
+ 	PKCS11_CKM_SHA256_RSA_PKCS		= 0x00040,
+ 	PKCS11_CKM_SHA384_RSA_PKCS		= 0x00041,
+ 	PKCS11_CKM_SHA512_RSA_PKCS		= 0x00042,
+@@ -1346,6 +1411,21 @@ enum pkcs11_keydiff_id {
+ 	PKCS11_CKD_UNDEFINED_ID			= PKCS11_UNDEFINED_ID,
+ };
+ 
++/*
++ * Valid values for attribute PKCS11_CKA_PARAMETER_SET (PKCS#11 v3.2)
++ * PKCS11_CKP_<x> reflects CryptoKi client API parameter set IDs CKP_<x>.
++ */
++enum pkcs11_pqc_parameter_set {
++	PKCS11_CKP_ML_DSA_44			= 1,
++	PKCS11_CKP_ML_DSA_65			= 2,
++	PKCS11_CKP_ML_DSA_87			= 3,
++	PKCS11_CKP_ML_KEM_512			= 1,
++	PKCS11_CKP_ML_KEM_768			= 2,
++	PKCS11_CKP_ML_KEM_1024			= 3,
++	/* Vendor extension: reserved for undefined ID (~0U) */
++	PKCS11_CKP_UNDEFINED_ID			= PKCS11_UNDEFINED_ID,
++};
++
+ /*
+  * Valid values MG function identifiers
+  * PKCS11_CKG_<x> reflects CryptoKi client API MG function IDs CKG_<x>.
+diff --git a/ta/pkcs11/src/pkcs11_helpers.c b/ta/pkcs11/src/pkcs11_helpers.c
+index 2c6c3147d..b1c57d8be 100644
+--- a/ta/pkcs11/src/pkcs11_helpers.c
++++ b/ta/pkcs11/src/pkcs11_helpers.c
+@@ -59,6 +59,12 @@ static const struct attr_size attr_ids[] = {
+ 	PKCS11_ID_SZ(PKCS11_CKA_MECHANISM_TYPE, 4),
+ 	PKCS11_ID_SZ(PKCS11_CKA_ID, 0),
+ 	PKCS11_ID_SZ(PKCS11_CKA_ALLOWED_MECHANISMS, 0),
++	PKCS11_ID_SZ(PKCS11_CKA_PARAMETER_SET, 4),
++	PKCS11_ID_SZ(PKCS11_CKA_SEED, 0),
++	PKCS11_ID_SZ(PKCS11_CKA_ENCAPSULATE, 1),
++	PKCS11_ID_SZ(PKCS11_CKA_DECAPSULATE, 1),
++	PKCS11_ID_SZ(PKCS11_CKA_ENCAPSULATE_TEMPLATE, 0),
++	PKCS11_ID_SZ(PKCS11_CKA_DECAPSULATE_TEMPLATE, 0),
+ 	PKCS11_ID_SZ(PKCS11_CKA_EC_POINT, 0),
+ 	PKCS11_ID_SZ(PKCS11_CKA_EC_PARAMS, 0),
+ 	PKCS11_ID_SZ(PKCS11_CKA_MODULUS, 0),
+@@ -311,6 +317,7 @@ static const struct any_id __maybe_unused string_rc[] = {
+ 	PKCS11_ID(PKCS11_CKR_CURVE_NOT_SUPPORTED),
+ 	PKCS11_ID(PKCS11_CKR_BUFFER_TOO_SMALL),
+ 	PKCS11_ID(PKCS11_CKR_PIN_TOO_WEAK),
++	PKCS11_ID(PKCS11_CKR_PARAMETER_SET_NOT_SUPPORTED),
+ 	PKCS11_ID(PKCS11_RV_NOT_FOUND),
+ 	PKCS11_ID(PKCS11_RV_NOT_IMPLEMENTED),
+ };
+@@ -340,6 +347,8 @@ static const struct any_id __maybe_unused string_key_type[] = {
+ 	PKCS11_ID(PKCS11_CKK_EC),
+ 	PKCS11_ID(PKCS11_CKK_EC_EDWARDS),
+ 	PKCS11_ID(PKCS11_CKK_EDDSA),
++	PKCS11_ID(PKCS11_CKK_ML_DSA),
++	PKCS11_ID(PKCS11_CKK_ML_KEM),
+ 	PKCS11_ID(PKCS11_CKK_RSA),
+ 	PKCS11_ID(PKCS11_CKK_UNDEFINED_ID)
+ };
+@@ -501,6 +510,8 @@ bool key_type_is_asymm_key(uint32_t id)
+ 	case PKCS11_CKK_EC:
+ 	case PKCS11_CKK_EC_EDWARDS:
+ 	case PKCS11_CKK_RSA:
++	case PKCS11_CKK_ML_DSA:
++	case PKCS11_CKK_ML_KEM:
+ 		return true;
+ 	default:
+ 		return false;
+-- 
+2.34.1
+

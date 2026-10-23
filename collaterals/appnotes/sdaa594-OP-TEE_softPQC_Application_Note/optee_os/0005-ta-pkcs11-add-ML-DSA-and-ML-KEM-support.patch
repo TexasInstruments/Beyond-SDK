@@ -1,0 +1,218 @@
+From 4e4a62169c0dae70fd3c15ff763a164d553cbdf2 Mon Sep 17 00:00:00 2001
+From: Kamlesh Gurudasani <kamlesh@ti.com>
+Date: Thu, 15 Oct 2026 15:53:55 +0530
+Subject: [PATCH 5/5] ta: pkcs11: add ML-DSA and ML-KEM support
+
+Wire the post-quantum mechanisms into the PKCS#11 TA, behind two new
+configuration switches, both off by default:
+
+  CFG_PKCS11_TA_ML_DSA=y   FIPS 204 ML-DSA-44, ML-DSA-65, ML-DSA-87
+  CFG_PKCS11_TA_ML_KEM=y   FIPS 203 ML-KEM-512, ML-KEM-768, ML-KEM-1024
+
+Each switch enables all three parameter sets of its algorithm at once;
+they coexist in the same TA and token, and the one a key uses is chosen
+per key with CKA_PARAMETER_SET. Persistent (CKA_TOKEN=true) and session
+objects are both supported.
+
+- sub.mk: define the switches and, when either is enabled, build
+  mldsa-native/ and mlkem-native/ and raise CFG_PKCS11_TA_HEAP_SIZE to
+  512 kB and the new CFG_PKCS11_TA_STACK_SIZE to 256 kB. The reference
+  implementations use large polynomial/NTT buffers on the stack; the
+  sizes are documented in sub.mk, together with the measured failure
+  thresholds. The default stack
+  size stays 4 kB when PQC is off.
+- user_ta_header_defines.h: take TA_STACK_SIZE from
+  CFG_PKCS11_TA_STACK_SIZE.
+- entry.c: dispatch PKCS11_CMD_ENCAPSULATE_KEY and
+  PKCS11_CMD_DECAPSULATE_KEY.
+- token_capabilities.c: advertise CKM_ML_DSA_KEY_PAIR_GEN, CKM_ML_DSA,
+  CKM_ML_KEM_KEY_PAIR_GEN and CKM_ML_KEM, and the new encapsulate and
+  decapsulate mechanism flags. Key sizes advertised span the private key
+  sizes of all three parameter sets: ML-DSA 2560 to 4896 bytes and
+  ML-KEM 1632 to 3168 bytes.
+
+Testing: with both switches enabled, "xtest -t pkcs11" (optee_test with
+the matching PQC test cases) passes with no failures on a TI AM62Lx
+EVM (k3-am62lx). ML-DSA and
+ML-KEM keys were also generated and used on the AM62Lx through
+pkcs11-provider and OpenSSL 3.5 for all six parameter sets.
+
+Signed-off-by: Kamlesh Gurudasani <kamlesh@ti.com>
+---
+ ta/pkcs11/src/entry.c                  |  6 +++
+ ta/pkcs11/src/token_capabilities.c     | 54 +++++++++++++++++++++++++-
+ ta/pkcs11/src/user_ta_header_defines.h |  2 +-
+ ta/pkcs11/sub.mk                       | 27 +++++++++++++
+ 4 files changed, 87 insertions(+), 2 deletions(-)
+
+diff --git a/ta/pkcs11/src/entry.c b/ta/pkcs11/src/entry.c
+index 0e36b9176..96ab5b245 100644
+--- a/ta/pkcs11/src/entry.c
++++ b/ta/pkcs11/src/entry.c
+@@ -356,6 +356,12 @@ TEE_Result TA_InvokeCommandEntryPoint(void *tee_session, uint32_t cmd,
+ 		rc = entry_processing_key(client, ptypes, params,
+ 					  PKCS11_FUNCTION_UNWRAP);
+ 		break;
++	case PKCS11_CMD_ENCAPSULATE_KEY:
++		rc = entry_encapsulate_key(client, ptypes, params);
++		break;
++	case PKCS11_CMD_DECAPSULATE_KEY:
++		rc = entry_decapsulate_key(client, ptypes, params);
++		break;
+ 	default:
+ 		EMSG("Command %#"PRIx32" is not supported", cmd);
+ 		return TEE_ERROR_NOT_SUPPORTED;
+diff --git a/ta/pkcs11/src/token_capabilities.c b/ta/pkcs11/src/token_capabilities.c
+index e1a6c0b2c..7755eaa89 100644
+--- a/ta/pkcs11/src/token_capabilities.c
++++ b/ta/pkcs11/src/token_capabilities.c
+@@ -19,7 +19,8 @@
+ 	 PKCS11_CKFM_SIGN | PKCS11_CKFM_SIGN_RECOVER |		\
+ 	 PKCS11_CKFM_VERIFY | PKCS11_CKFM_VERIFY_RECOVER |	\
+ 	 PKCS11_CKFM_GENERATE |	PKCS11_CKFM_GENERATE_KEY_PAIR |	\
+-	 PKCS11_CKFM_WRAP | PKCS11_CKFM_UNWRAP)
++	 PKCS11_CKFM_WRAP | PKCS11_CKFM_UNWRAP |		\
++	 PKCS11_CKFM_ENCAPSULATE | PKCS11_CKFM_DECAPSULATE)
+ 
+ /*
+  * Definition of supported processings for a PKCS#11 mechanisms
+@@ -123,6 +124,16 @@ static const struct pkcs11_mechachism_modes pkcs11_modes[] = {
+ 	MECHANISM(PKCS11_CKM_EC_EDWARDS_KEY_PAIR_GEN,
+ 		  PKCS11_CKFM_GENERATE_KEY_PAIR, ANY_PART),
+ 	MECHANISM(PKCS11_CKM_EDDSA, CKFM_AUTH_NO_RECOVER, ANY_PART),
++	/* ML-DSA (PKCS#11 v3.2) */
++	MECHANISM(PKCS11_CKM_ML_DSA_KEY_PAIR_GEN,
++		  PKCS11_CKFM_GENERATE_KEY_PAIR, ANY_PART),
++	MECHANISM(PKCS11_CKM_ML_DSA, CKFM_AUTH_NO_RECOVER, SINGLE_PART_ONLY),
++	/* ML-KEM (PKCS#11 v3.2) */
++	MECHANISM(PKCS11_CKM_ML_KEM_KEY_PAIR_GEN,
++		  PKCS11_CKFM_GENERATE_KEY_PAIR, ANY_PART),
++	MECHANISM(PKCS11_CKM_ML_KEM,
++		  PKCS11_CKFM_ENCAPSULATE | PKCS11_CKFM_DECAPSULATE,
++		  SINGLE_PART_ONLY),
+ 	/* RSA */
+ 	MECHANISM(PKCS11_CKM_RSA_AES_KEY_WRAP, CKFM_CIPHER_WRAP,
+ 		  SINGLE_PART_ONLY),
+@@ -273,6 +284,17 @@ const struct pkcs11_mechachism_modes token_mechanism[] = {
+ 	TA_MECHANISM(PKCS11_CKM_ECDSA_SHA384, CKFM_AUTH_NO_RECOVER),
+ 	TA_MECHANISM(PKCS11_CKM_ECDSA_SHA512, CKFM_AUTH_NO_RECOVER),
+ 	TA_MECHANISM(PKCS11_CKM_EDDSA, CKFM_AUTH_NO_RECOVER),
++#ifdef CFG_PKCS11_TA_ML_DSA
++	TA_MECHANISM(PKCS11_CKM_ML_DSA_KEY_PAIR_GEN,
++		     PKCS11_CKFM_GENERATE_KEY_PAIR),
++	TA_MECHANISM(PKCS11_CKM_ML_DSA, CKFM_AUTH_NO_RECOVER),
++#endif
++#ifdef CFG_PKCS11_TA_ML_KEM
++	TA_MECHANISM(PKCS11_CKM_ML_KEM_KEY_PAIR_GEN,
++		     PKCS11_CKFM_GENERATE_KEY_PAIR),
++	TA_MECHANISM(PKCS11_CKM_ML_KEM,
++		     PKCS11_CKFM_ENCAPSULATE | PKCS11_CKFM_DECAPSULATE),
++#endif
+ 	TA_MECHANISM(PKCS11_CKM_RSA_AES_KEY_WRAP, CKFM_CIPHER_WRAP),
+ 	TA_MECHANISM(PKCS11_CKM_RSA_PKCS_KEY_PAIR_GEN,
+ 		     PKCS11_CKFM_GENERATE_KEY_PAIR),
+@@ -417,6 +439,32 @@ void pkcs11_mechanism_supported_key_sizes(uint32_t proc_id,
+ 		*min_key_size = 256;	/* in bits */
+ 		*max_key_size = 448;	/* in bits */
+ 		break;
++	case PKCS11_CKM_ML_DSA_KEY_PAIR_GEN:
++	case PKCS11_CKM_ML_DSA:
++		/*
++		 * Three parameter sets are supported, ML-DSA-44/65/87:
++		 * report the range spanning all three fixed private key
++		 * sizes (bytes converted to bits, same convention as the
++		 * other key-pair mechanisms above). The actual per-key
++		 * size is determined by CKA_PARAMETER_SET at generation
++		 * time, not by this range - see generate_mldsa_keys().
++		 */
++		*min_key_size = 2560 * 8;	/* in bits, ML-DSA-44 */
++		*max_key_size = 4896 * 8;	/* in bits, ML-DSA-87 */
++		break;
++	case PKCS11_CKM_ML_KEM_KEY_PAIR_GEN:
++	case PKCS11_CKM_ML_KEM:
++		/*
++		 * Three parameter sets are supported, ML-KEM-512/768/1024:
++		 * report the range spanning all three fixed private key
++		 * sizes (bytes converted to bits, same convention as the
++		 * other key-pair mechanisms above). The actual per-key
++		 * size is determined by CKA_PARAMETER_SET at generation
++		 * time, not by this range - see generate_mlkem_keys().
++		 */
++		*min_key_size = 1632 * 8;	/* in bits, ML-KEM-512 */
++		*max_key_size = 3168 * 8;	/* in bits, ML-KEM-1024 */
++		break;
+ 	case PKCS11_CKM_RSA_PKCS_KEY_PAIR_GEN:
+ 	case PKCS11_CKM_RSA_PKCS:
+ 	case PKCS11_CKM_RSA_X_509:
+@@ -460,6 +508,10 @@ void mechanism_supported_key_sizes_bytes(uint32_t proc_id,
+ 	case PKCS11_CKM_ECDSA_SHA256:
+ 	case PKCS11_CKM_ECDSA_SHA384:
+ 	case PKCS11_CKM_ECDSA_SHA512:
++	case PKCS11_CKM_ML_DSA_KEY_PAIR_GEN:
++	case PKCS11_CKM_ML_DSA:
++	case PKCS11_CKM_ML_KEM_KEY_PAIR_GEN:
++	case PKCS11_CKM_ML_KEM:
+ 	case PKCS11_CKM_RSA_PKCS_KEY_PAIR_GEN:
+ 		/* Size is in bits -> convert to bytes and ceil */
+ 		*min_key_size = ROUNDUP_DIV(*min_key_size, 8);
+diff --git a/ta/pkcs11/src/user_ta_header_defines.h b/ta/pkcs11/src/user_ta_header_defines.h
+index 4d468ca8e..2c95effcd 100644
+--- a/ta/pkcs11/src/user_ta_header_defines.h
++++ b/ta/pkcs11/src/user_ta_header_defines.h
+@@ -14,7 +14,7 @@
+ 					 TA_FLAG_MULTI_SESSION | \
+ 					 TA_FLAG_INSTANCE_KEEP_ALIVE)
+ 
+-#define TA_STACK_SIZE			(4 * 1024)
++#define TA_STACK_SIZE			CFG_PKCS11_TA_STACK_SIZE
+ 
+ #define TA_DATA_SIZE			CFG_PKCS11_TA_HEAP_SIZE
+ 
+diff --git a/ta/pkcs11/sub.mk b/ta/pkcs11/sub.mk
+index 9ce6b6944..a8d3c995f 100644
+--- a/ta/pkcs11/sub.mk
++++ b/ta/pkcs11/sub.mk
+@@ -7,6 +7,9 @@ CFG_PKCS11_TA_AUTH_TEE_IDENTITY ?= y
+ # PKCS#11 TA heap size can be customized if 32kB is not enough
+ CFG_PKCS11_TA_HEAP_SIZE ?= (32 * 1024)
+ 
++# PKCS#11 TA stack size can be customized if 4kB is not enough
++CFG_PKCS11_TA_STACK_SIZE ?= (4 * 1024)
++
+ # Defines the number of PKCS11 token implemented by the PKCS11 TA
+ CFG_PKCS11_TA_TOKEN_COUNT ?= 3
+ 
+@@ -18,6 +21,30 @@ CFG_PKCS11_TA_CHECK_VALUE_ATTRIBUTE ?= y
+ # Raw RSA can be unsafe if client uses a weak clear data padding scheme.
+ CFG_PKCS11_TA_RSA_X_509 ?= n
+ 
++# Enable PKCS#11 TA's ML-KEM-512/768/1024 key encapsulation support (PKCS#11 v3.2)
++CFG_PKCS11_TA_ML_KEM ?= n
++
++# Enable PKCS#11 TA's ML-DSA-44/65/87 signature support (PKCS#11 v3.2)
++CFG_PKCS11_TA_ML_DSA ?= n
++
++ifeq ($(CFG_PKCS11_TA_ML_KEM)$(CFG_PKCS11_TA_ML_DSA),nn)
++else
++# mlkem-native and mldsa-native never call malloc(): their NTT/polynomial
++# working buffers live on the stack, so ML-KEM/ML-DSA need far more stack
++# and heap than the legacy defaults. Measured:
++# - 64kB stack overflows (guard-page data abort) in ML-DSA-65 C_Sign.
++# - 256kB heap / 128kB stack still fails when creating a persistent
++#   (CKA_TOKEN=true) key, reported as a normal-world RPC allocation
++#   failure (ret=0xffff000c) rather than as a TA out-of-memory error.
++# - 512kB heap / 256kB stack fixes both and passes "xtest -t pkcs11".
++# - ML-DSA-87, the largest user, fails with its stack between 96kB and
++#   112kB (80kB panics), so 256kB leaves about 2.3-2.7x headroom.
++CFG_PKCS11_TA_HEAP_SIZE := (512 * 1024)
++CFG_PKCS11_TA_STACK_SIZE := (256 * 1024)
++subdirs-y += mldsa-native
++subdirs-y += mlkem-native
++endif
++
+ global-incdirs-y += include
+ global-incdirs-y += src
+ subdirs-y += src
+-- 
+2.34.1
+

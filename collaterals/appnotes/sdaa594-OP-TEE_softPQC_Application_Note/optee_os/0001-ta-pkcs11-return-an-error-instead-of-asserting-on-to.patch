@@ -1,0 +1,47 @@
+From 1086fa888ad2a7ace8e253ed70eeeaa8bb67cb4e Mon Sep 17 00:00:00 2001
+From: Kamlesh Gurudasani <kamlesh@ti.com>
+Date: Thu, 15 Oct 2026 15:40:51 +0530
+Subject: [PATCH 1/5] ta: pkcs11: return an error instead of asserting on token
+ state
+
+entry_ck_init_pin() and check_so_pin() assert() that the token has the
+PKCS11_CKFT_TOKEN_INITIALIZED flag set. If the flag is out of sync with
+the token's stored state, the assert panics the whole TA instance,
+taking down every session of every client rather than just failing the
+one request.
+
+Return PKCS11_CKR_GENERAL_ERROR in both places instead, so a
+C_InitPIN() or SO login on such a token fails gracefully.
+
+Signed-off-by: Kamlesh Gurudasani <kamlesh@ti.com>
+---
+ ta/pkcs11/src/pkcs11_token.c | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/ta/pkcs11/src/pkcs11_token.c b/ta/pkcs11/src/pkcs11_token.c
+index 23ecbc7c8..fb58f0516 100644
+--- a/ta/pkcs11/src/pkcs11_token.c
++++ b/ta/pkcs11/src/pkcs11_token.c
+@@ -1121,7 +1121,8 @@ enum pkcs11_rc entry_ck_init_pin(struct pkcs11_client *client,
+ 	if (!pkcs11_session_is_so(session))
+ 		return PKCS11_CKR_USER_NOT_LOGGED_IN;
+ 
+-	assert(session->token->db_main->flags & PKCS11_CKFT_TOKEN_INITIALIZED);
++	if (!(session->token->db_main->flags & PKCS11_CKFT_TOKEN_INITIALIZED))
++		return PKCS11_CKR_GENERAL_ERROR;
+ 
+ 	IMSG("PKCS11 session %"PRIu32": init PIN", session->handle);
+ 
+@@ -1135,7 +1136,8 @@ static enum pkcs11_rc check_so_pin(struct pkcs11_session *session,
+ 	struct token_persistent_main *db = token->db_main;
+ 	enum pkcs11_rc rc = PKCS11_CKR_OK;
+ 
+-	assert(db->flags & PKCS11_CKFT_TOKEN_INITIALIZED);
++	if (!(db->flags & PKCS11_CKFT_TOKEN_INITIALIZED))
++		return PKCS11_CKR_GENERAL_ERROR;
+ 
+ 	if (IS_ENABLED(CFG_PKCS11_TA_AUTH_TEE_IDENTITY) &&
+ 	    db->flags & PKCS11_CKFT_PROTECTED_AUTHENTICATION_PATH)
+-- 
+2.34.1
+

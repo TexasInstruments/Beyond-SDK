@@ -1,0 +1,112 @@
+From 6275ae62b190f2ee79decd747794c9cf1af726f4 Mon Sep 17 00:00:00 2001
+From: Kamlesh Gurudasani <kamlesh@ti.com>
+Date: Fri, 16 Oct 2026 15:55:01 +0530
+Subject: [PATCH 1/2] xtest: pkcs11_1000: export the token setup helpers
+
+Make auth_type, test_token_user_pin, close_lib(),
+init_lib_and_find_token_slot(), init_test_token_pin_auth() and
+init_user_test_token_pin_auth() available through pkcs11_1000.h so that
+other pkcs11 test files can reuse the same token and session setup
+instead of duplicating it.
+
+No functional change.
+
+Signed-off-by: Kamlesh Gurudasani <kamlesh@ti.com>
+---
+ host/xtest/pkcs11_1000.c | 18 +++++-------------
+ host/xtest/pkcs11_1000.h | 18 ++++++++++++++++++
+ 2 files changed, 23 insertions(+), 13 deletions(-)
+
+diff --git a/host/xtest/pkcs11_1000.c b/host/xtest/pkcs11_1000.c
+index 0931b25..bf4f91b 100644
+--- a/host/xtest/pkcs11_1000.c
++++ b/host/xtest/pkcs11_1000.c
+@@ -30,14 +30,6 @@
+ /* AES GCM tag size in bytes */
+ #define AES_GCM_TAG_SIZE 16
+ 
+-/*
+- * auth_type enumerates the types of user authentication
+- *
+- * PIN_AUTH  Pin authentication.
+- * ACL_AUTH  ACL authentication.
+- */
+-enum auth_type { PIN_AUTH, ACL_AUTH };
+-
+ /*
+  * Some PKCS#11 object resources used in the tests
+  */
+@@ -143,12 +135,12 @@ static CK_MECHANISM cktest_aes_keygen_mechanism = {
+ /*
+  * Util to find a slot on which to open a session
+  */
+-static CK_RV close_lib(void)
++CK_RV close_lib(void)
+ {
+ 	return C_Finalize(0);
+ }
+ 
+-static CK_RV init_lib_and_find_token_slot(CK_SLOT_ID *slot, enum auth_type at)
++CK_RV init_lib_and_find_token_slot(CK_SLOT_ID *slot, enum auth_type at)
+ {
+ 	CK_RV rv = CKR_GENERAL_ERROR;
+ 	CK_SLOT_ID_PTR slots = NULL;
+@@ -625,7 +617,7 @@ ADBG_CASE_DEFINE(pkcs11, 1002, xtest_pkcs11_test_1002,
+ static CK_UTF8CHAR test_token_so_pin[] = { '1', '2', '3', '4', '5', '6', '7',
+ 					   '8' };
+ static CK_UTF8CHAR deprecated_so_pin[] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 };
+-static CK_UTF8CHAR test_token_user_pin[] = { '1', '2', '3', '4', '5' };
++CK_UTF8CHAR test_token_user_pin[] = { '1', '2', '3', '4', '5' };
+ static CK_UTF8CHAR test_token_label[] = "PKCS11 TA test token";
+ 
+ /*
+@@ -660,7 +652,7 @@ out:
+ 	return rv;
+ }
+ 
+-static CK_RV init_test_token_pin_auth(CK_SLOT_ID slot)
++CK_RV init_test_token_pin_auth(CK_SLOT_ID slot)
+ {
+ 	CK_RV rv = CKR_GENERAL_ERROR;
+ 
+@@ -677,7 +669,7 @@ static CK_RV init_test_token_pin_auth(CK_SLOT_ID slot)
+ }
+ 
+ /* Login as user, eventually reset user PIN if needed */
+-static CK_RV init_user_test_token_pin_auth(CK_SLOT_ID slot)
++CK_RV init_user_test_token_pin_auth(CK_SLOT_ID slot)
+ {
+ 	CK_FLAGS session_flags = CKF_SERIAL_SESSION | CKF_RW_SESSION;
+ 	CK_SESSION_HANDLE session = CK_INVALID_HANDLE;
+diff --git a/host/xtest/pkcs11_1000.h b/host/xtest/pkcs11_1000.h
+index 0d19748..e3d3b9c 100644
+--- a/host/xtest/pkcs11_1000.h
++++ b/host/xtest/pkcs11_1000.h
+@@ -6,6 +6,24 @@
+ #ifndef XTEST_PKCS11_1000_H
+ #define XTEST_PKCS11_1000_H
+ 
++/*
++ * auth_type enumerates the types of user authentication
++ *
++ * PIN_AUTH  Pin authentication.
++ * ACL_AUTH  ACL authentication.
++ */
++enum auth_type { PIN_AUTH, ACL_AUTH };
++
++/* Test token user PIN, shared with other pkcs11_*.c test files */
++#define TEST_TOKEN_USER_PIN_LEN 5
++extern CK_UTF8CHAR test_token_user_pin[TEST_TOKEN_USER_PIN_LEN];
++
++/* Shared session/token setup helpers, reused by other pkcs11_*.c test files */
++CK_RV close_lib(void);
++CK_RV init_lib_and_find_token_slot(CK_SLOT_ID *slot, enum auth_type at);
++CK_RV init_test_token_pin_auth(CK_SLOT_ID slot);
++CK_RV init_user_test_token_pin_auth(CK_SLOT_ID slot);
++
+ /* Helper function for finding and detroying a token object */
+ int xtest_pkcs11_1028_destroy_token_object(void);
+ 
+-- 
+2.34.1
+
