@@ -1,0 +1,86 @@
+VERSION
+7
+
+COMMSETTINGS
+0
+77
+2
+115200
+2
+63
+4
+0
+0
+
+COMMDISPLAY
+0
+
+SEND
+0
+Interrupt3_Falling_Edge
+54 49 00 01 00 00 04 00 03 00 00 01
+0
+5
+
+SEND
+1
+Interrupt3_Rising_Edge
+54 49 00 01 00 00 04 00 03 00 00 02
+0
+5
+
+SEND
+2
+Interrupt3_Both_Edge
+54 49 00 01 00 00 04 00 03 00 00 03
+0
+5
+
+SEND
+3
+Interrupt3_Counter_Reset
+54 49 00 02 00 00 04 01 02 02 01
+0
+5
+
+SEND
+4
+Interrupt3_Counter_NoReset
+54 49 00 02 00 00 04 01 02 02 00
+0
+5
+
+SEND
+5
+Interrupt3_Callback_Enable
+54 49 00 01 00 00 04 02 02 02 01 
+0
+5
+
+SEND
+6
+Interrupt3_Callback_Disable
+54 49 00 01 00 00 04 02 02 02 00 
+0
+5
+
+SEND
+7
+Interrupt3_GPIO_Toggle_HIGH_POL
+54 49 00 01 00 00 03 06 04 05 00 01 F4
+0
+5
+
+SEND
+8
+Interrupt3_GPIO_Toggle_LOW_POL
+54 49 00 01 00 00 03 06 04 05 00 01 F4
+0
+5
+
+SEND
+9
+Interrupt3_Disable_Trigger_NONE
+54 49 00 03 00 00 04 00 03 00 00 00
+0
+5
